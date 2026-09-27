@@ -50,7 +50,10 @@ layout(rg16f, set = 0, binding = 3) uniform restrict readonly image2D last_veloc
 layout(set = 0, binding = 4) uniform sampler2D history_buffer;
 layout(rgba16f, set = 0, binding = 5) uniform restrict writeonly image2D output_buffer;
 
+#include "motion_vector_inc.glsl"
+
 layout(push_constant, std430) uniform Params {
+	highp mat4 reprojection_matrix; // This view's clip space to its clip space last frame, for pixels without motion vectors.
 	vec2 resolution;
 	float disocclusion_threshold; // 0.1 / max(params.resolution.x, params.resolution.y)
 	float variance_dynamic;
@@ -142,6 +145,19 @@ void populate_group_shared_memory(uvec2 group_id, uint group_index) {
 								VELOCITY
 ------------------------------------------------------------------------------*/
 
+// Only geometry writes motion vectors. Pixels nothing drew into (the sky) keep the invalid value (-1, -1);
+// derive the camera's motion for those from depth, as FSR2 does.
+vec2 get_velocity(ivec2 pos) {
+	pos = clamp(pos, ivec2(0), ivec2(params.resolution) - ivec2(1));
+	vec2 velocity = imageLoad(velocity_buffer, pos).xy;
+	if (all(lessThanEqual(velocity, vec2(-1.0)))) {
+		float depth = texelFetch(depth_buffer, pos, 0).r;
+		vec2 uv = (vec2(pos) + 0.5) / params.resolution;
+		velocity = derive_motion_vector(uv, depth, params.reprojection_matrix);
+	}
+	return velocity;
+}
+
 void depth_test_closest(uvec2 pos, inout float closest_depth, inout uvec2 closest_pos) {
 	float depth = load_depth(pos);
 
@@ -168,7 +184,7 @@ void get_closest_pixel_velocity_3x3(in uvec2 group_pos, uvec2 group_top_left, ou
 	depth_test_closest(group_pos + kOffsets3x3[8], closest_depth, closest_pos);
 
 	// Velocity out. The tile has a border, so a group position is kBorderSize pixels past group_top_left.
-	velocity = imageLoad(velocity_buffer, ivec2(group_top_left + closest_pos + kBorderSize)).xy;
+	velocity = get_velocity(ivec2(group_top_left + closest_pos + kBorderSize));
 }
 
 /*------------------------------------------------------------------------------
@@ -306,6 +322,10 @@ float luminance(vec3 color) {
 // We use texel space, so our scale and threshold differ.
 float get_factor_disocclusion(vec2 uv_reprojected, vec2 velocity) {
 	vec2 velocity_previous = imageLoad(last_velocity_buffer, ivec2(uv_reprojected * params.resolution)).xy;
+	if (all(lessThanEqual(velocity_previous, vec2(-1.0)))) {
+		// Nothing drew there last frame (the sky); its motion wasn't stored, so there is nothing to compare.
+		return 0.0;
+	}
 	vec2 velocity_texels = velocity * params.resolution;
 	vec2 prev_velocity_texels = velocity_previous * params.resolution;
 	float disocclusion = length(prev_velocity_texels - velocity_texels) - params.disocclusion_threshold;
@@ -314,7 +334,7 @@ float get_factor_disocclusion(vec2 uv_reprojected, vec2 velocity) {
 
 vec3 temporal_antialiasing(uvec2 pos_group_top_left, uvec2 pos_group, uvec2 pos_screen, vec2 uv, sampler2D tex_history) {
 	// Get the velocity of the current pixel
-	vec2 velocity = imageLoad(velocity_buffer, ivec2(pos_screen)).xy;
+	vec2 velocity = get_velocity(ivec2(pos_screen));
 
 	// Get reprojected uv
 	vec2 uv_reprojected = uv + velocity;

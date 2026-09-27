@@ -32,6 +32,7 @@
 
 #include "servers/rendering/renderer_rd/shaders/effects/taa_resolve.glsl.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_scene_buffers_rd.h"
+#include "servers/rendering/renderer_rd/storage_rd/render_scene_data_rd.h"
 
 namespace RendererRD {
 
@@ -40,10 +41,11 @@ public:
 	TAA();
 	~TAA();
 
-	void process(Ref<RenderSceneBuffersRD> p_render_buffers, RD::DataFormat p_format, float p_z_near, float p_z_far);
+	void process(Ref<RenderSceneBuffersRD> p_render_buffers, const RenderSceneDataRD *p_scene_data, RD::DataFormat p_format, float p_z_near, float p_z_far);
 
 private:
 	struct TAAResolvePushConstant {
+		float reprojection_matrix[16];
 		float resolution_width;
 		float resolution_height;
 		float disocclusion_threshold;
@@ -54,7 +56,7 @@ private:
 	RID shader_version;
 	RID pipeline;
 
-	void resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, Size2 p_resolution, float p_z_near, float p_z_far);
+	void resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, const Projection &p_reprojection, Size2 p_resolution, float p_z_near, float p_z_far);
 };
 
 } // namespace RendererRD

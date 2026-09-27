@@ -2302,7 +2302,9 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 					if (using_separate_specular) {
 						c.push_back(Color(0, 0, 0, 0)); // Separate specular.
 					}
-					c.push_back(Color(0, 0, 0, 0)); // Motion vector.
+					// Motion vector. With TAA, pixels nothing draws into (the sky) keep the invalid value (-1, -1) and
+					// TAA derives their motion from depth, the same as FSR2 does.
+					c.push_back(using_taa ? Color(-1, -1, 0, 0) : Color(0, 0, 0, 0));
 				}
 			}
 
@@ -2625,7 +2627,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		} else if (using_taa) {
 			RD::get_singleton()->draw_command_begin_label("TAA");
 			RENDER_TIMESTAMP("TAA");
-			taa->process(rb, rb->get_base_data_format(), p_render_data->scene_data->z_near, p_render_data->scene_data->z_far);
+			taa->process(rb, p_render_data->scene_data, rb->get_base_data_format(), p_render_data->scene_data->z_near, p_render_data->scene_data->z_far);
 			RD::get_singleton()->draw_command_end_label();
 		}
 	}

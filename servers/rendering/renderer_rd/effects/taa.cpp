@@ -48,7 +48,7 @@ TAA::~TAA() {
 	taa_shader.version_free(shader_version);
 }
 
-void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, Size2 p_resolution, float p_z_near, float p_z_far) {
+void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, const Projection &p_reprojection, Size2 p_resolution, float p_z_near, float p_z_far) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
@@ -66,6 +66,7 @@ void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_pr
 
 	TAAResolvePushConstant push_constant;
 	memset(&push_constant, 0, sizeof(TAAResolvePushConstant));
+	RendererRD::MaterialStorage::store_camera(p_reprojection, push_constant.reprojection_matrix);
 	push_constant.resolution_width = p_resolution.width;
 	push_constant.resolution_height = p_resolution.height;
 	push_constant.disocclusion_threshold = 2.5f; // If velocity changes by less than this amount of texels we can retain the accumulation buffer.
@@ -87,8 +88,9 @@ void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_pr
 	RD::get_singleton()->compute_list_end();
 }
 
-void TAA::process(Ref<RenderSceneBuffersRD> p_render_buffers, RD::DataFormat p_format, float p_z_near, float p_z_far) {
+void TAA::process(Ref<RenderSceneBuffersRD> p_render_buffers, const RenderSceneDataRD *p_scene_data, RD::DataFormat p_format, float p_z_near, float p_z_far) {
 	CopyEffects *copy_effects = CopyEffects::get_singleton();
+	ERR_FAIL_NULL(p_scene_data);
 
 	uint32_t view_count = p_render_buffers->get_view_count();
 	Size2i internal_size = p_render_buffers->get_internal_size();
@@ -118,7 +120,14 @@ void TAA::process(Ref<RenderSceneBuffersRD> p_render_buffers, RD::DataFormat p_f
 		if (!just_allocated) {
 			RID depth_texture = p_render_buffers->get_depth_texture(v);
 			RID taa_temp = p_render_buffers->get_texture_slice(SNAME("taa"), SNAME("temp"), v, 0);
-			resolve(internal_texture, taa_temp, depth_texture, velocity_buffer, taa_prev_velocity, taa_history, Size2(internal_size.x, internal_size.y), p_z_near, p_z_far);
+
+			// For pixels left with invalid motion vectors (the sky), the resolve derives the camera's motion from depth
+			// with this matrix: this view's clip space to its clip space last frame.
+			Projection correction;
+			correction.set_depth_correction(true, true, false);
+			Projection reprojection = (correction * p_scene_data->prev_view_projection[v]) * p_scene_data->prev_cam_transform.affine_inverse() * p_scene_data->cam_transform * (correction * p_scene_data->view_projection[v]).inverse();
+
+			resolve(internal_texture, taa_temp, depth_texture, velocity_buffer, taa_prev_velocity, taa_history, reprojection, Size2(internal_size.x, internal_size.y), p_z_near, p_z_far);
 			copy_effects->copy_to_rect(taa_temp, internal_texture, Rect2(0, 0, internal_size.x, internal_size.y));
 		}
 
