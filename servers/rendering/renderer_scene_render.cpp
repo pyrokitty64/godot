@@ -50,7 +50,7 @@ void RendererSceneRender::CameraData::set_camera(const Transform3D p_transform, 
 	taa_frame_count = p_taa_frame_count;
 }
 
-void RendererSceneRender::CameraData::set_multiview_camera(const Transform3D &p_transform, const LocalVector<Transform3D> &p_offsets, const LocalVector<Projection> &p_projections, bool p_is_orthogonal, bool p_vaspect, uint32_t p_visible_layers) {
+void RendererSceneRender::CameraData::set_multiview_camera(const Transform3D &p_transform, const LocalVector<Transform3D> &p_offsets, const LocalVector<Projection> &p_projections, bool p_is_orthogonal, bool p_vaspect, const Vector2 &p_taa_jitter, float p_taa_frame_count, uint32_t p_visible_layers) {
 	ERR_FAIL_COND_MSG(p_projections.size() != 2, "Incorrect view count for stereoscopic view");
 	ERR_FAIL_COND(p_projections.size() != p_offsets.size());
 
@@ -58,6 +58,8 @@ void RendererSceneRender::CameraData::set_multiview_camera(const Transform3D &p_
 	view_count = p_projections.size();
 	is_orthogonal = p_is_orthogonal;
 	vaspect = p_vaspect;
+	taa_jitter = p_taa_jitter;
+	taa_frame_count = p_taa_frame_count;
 
 	main_transform = p_transform;
 	main_projection = Projection::create_combined_projection(p_transform, p_projections[0], p_offsets[0], p_projections[1], p_offsets[1]);

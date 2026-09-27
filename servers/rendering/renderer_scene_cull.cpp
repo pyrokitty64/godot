@@ -2786,7 +2786,7 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 	if (camera->projections.size() == 1) {
 		camera_data.set_camera(transform * camera->offsets[0], camera->projections[0], is_orthogonal, vaspect, jitter, taa_frame_count, camera->visible_layers);
 	} else if (camera->projections.size() == 2) {
-		camera_data.set_multiview_camera(transform, camera->offsets, camera->projections, is_orthogonal, vaspect, camera->visible_layers);
+		camera_data.set_multiview_camera(transform, camera->offsets, camera->projections, is_orthogonal, vaspect, jitter, taa_frame_count, camera->visible_layers);
 	} else {
 		ERR_FAIL_MSG("Unsupported camera setup.");
 	}
