@@ -2427,9 +2427,19 @@ void RenderingDeviceGraph::add_draw_list_end() {
 		trackers[i] = resource_tracker;
 	}
 
+	// Clear values are recorded per framebuffer attachment, but the render pass leaves out unused attachments
+	// (no texture), so the driver indexes clear values without them. Skip those; the count stays the same
+	// because the trackers and operations are stored right after the clear values.
 	RDD::RenderPassClearValue *clear_values = command->clear_values();
+	uint32_t clear_value_index = 0;
 	for (uint32_t i = 0; i < command->clear_values_count; i++) {
-		clear_values[i] = draw_instruction_list.attachment_clear_values[i];
+		if (framebuffer_cache != nullptr && i < trackers_count && framebuffer_cache->trackers[i] == nullptr) {
+			continue;
+		}
+		clear_values[clear_value_index++] = draw_instruction_list.attachment_clear_values[i];
+	}
+	for (; clear_value_index < command->clear_values_count; clear_value_index++) {
+		clear_values[clear_value_index] = RDD::RenderPassClearValue();
 	}
 
 	memcpy(command->instruction_data(), draw_instruction_list.data.ptr(), instruction_data_size);

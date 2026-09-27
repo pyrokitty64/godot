@@ -2298,8 +2298,11 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 				c.push_back(clear_color);
 
 				if (rb_data.is_valid()) {
-					c.push_back(Color(0, 0, 0, 0)); // Separate specular.
-					c.push_back(Color(0, 0, 0, 0)); // Motion vector. Pushed to the clear color vector even if the framebuffer isn't bound.
+					// Clear values go to the bound color attachments in order; unbound ones take no slot.
+					if (using_separate_specular) {
+						c.push_back(Color(0, 0, 0, 0)); // Separate specular.
+					}
+					c.push_back(Color(0, 0, 0, 0)); // Motion vector.
 				}
 			}
 
