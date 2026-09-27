@@ -50,6 +50,7 @@ Resolve::Resolve(bool p_prefer_raster_effects) {
 		resolve_modes.push_back("\n#define MODE_RESOLVE_GI\n");
 		resolve_modes.push_back("\n#define MODE_RESOLVE_GI\n#define VOXEL_GI_RESOLVE\n");
 		resolve_modes.push_back("\n#define MODE_RESOLVE_DEPTH\n");
+		resolve_modes.push_back("\n#define MODE_RESOLVE_VELOCITY\n");
 
 		resolve.shader.initialize(resolve_modes);
 
@@ -140,6 +141,41 @@ void Resolve::resolve_depth(RID p_source_depth, RID p_dest_depth, Vector2i p_scr
 	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, resolve.pipelines[mode]);
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 0, u_source_depth), 0);
 	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 1, u_dest_depth), 1);
+
+	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(ResolvePushConstant));
+
+	RD::get_singleton()->compute_list_dispatch_threads(compute_list, p_screen_size.x, p_screen_size.y, 1);
+
+	RD::get_singleton()->compute_list_end();
+}
+
+void Resolve::resolve_velocity(RID p_source_velocity, RID p_dest_velocity, Vector2i p_screen_size, int p_samples) {
+	ERR_FAIL_COND_MSG(prefer_raster_effects, "Can't use the compute shader resolve with the mobile renderer.");
+
+	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
+	ERR_FAIL_NULL(uniform_set_cache);
+	MaterialStorage *material_storage = MaterialStorage::get_singleton();
+	ERR_FAIL_NULL(material_storage);
+
+	ResolvePushConstant push_constant;
+	push_constant.screen_size[0] = p_screen_size.x;
+	push_constant.screen_size[1] = p_screen_size.y;
+	push_constant.samples = p_samples;
+
+	// setup our uniforms
+	RID default_sampler = material_storage->sampler_rd_get_default(RSE::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RSE::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
+
+	RD::Uniform u_source_velocity(RD::UNIFORM_TYPE_SAMPLER_WITH_TEXTURE, 0, Vector<RID>({ default_sampler, p_source_velocity }));
+	RD::Uniform u_dest_velocity(RD::UNIFORM_TYPE_IMAGE, 0, p_dest_velocity);
+
+	ResolveMode mode = RESOLVE_MODE_VELOCITY;
+	RID shader = resolve.shader.version_get_shader(resolve.shader_version, mode);
+	ERR_FAIL_COND(shader.is_null());
+
+	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
+	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, resolve.pipelines[mode]);
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 0, u_source_velocity), 0);
+	RD::get_singleton()->compute_list_bind_uniform_set(compute_list, uniform_set_cache->get_cache(shader, 1, u_dest_velocity), 1);
 
 	RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(ResolvePushConstant));
 

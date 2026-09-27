@@ -11,6 +11,11 @@ layout(set = 0, binding = 0) uniform sampler2DMS source_depth;
 layout(r32f, set = 1, binding = 0) uniform restrict writeonly image2D dest_depth;
 #endif
 
+#ifdef MODE_RESOLVE_VELOCITY
+layout(set = 0, binding = 0) uniform sampler2DMS source_velocity;
+layout(rg16f, set = 1, binding = 0) uniform restrict writeonly image2D dest_velocity;
+#endif
+
 #ifdef MODE_RESOLVE_GI
 layout(set = 0, binding = 0) uniform sampler2DMS source_depth;
 layout(set = 0, binding = 1) uniform sampler2DMS source_normal_roughness;
@@ -47,6 +52,24 @@ void main() {
 	}
 	depth_avg /= float(params.sample_count);
 	imageStore(dest_depth, pos, vec4(depth_avg));
+
+#endif
+
+#ifdef MODE_RESOLVE_VELOCITY
+
+	// Samples nothing drew into hold the invalid value (-1, -1). Averaging them with real motion would make up a
+	// motion nothing has, so average the valid samples only; the pixel stays invalid if none are valid.
+	vec2 velocity_sum = vec2(0.0);
+	int valid_samples = 0;
+	for (int i = 0; i < params.sample_count; i++) {
+		vec2 velocity = texelFetch(source_velocity, pos, i).xy;
+		if (!all(lessThanEqual(velocity, vec2(-1.0)))) {
+			velocity_sum += velocity;
+			valid_samples++;
+		}
+	}
+	vec2 velocity_resolved = valid_samples > 0 ? velocity_sum / float(valid_samples) : vec2(-1.0);
+	imageStore(dest_velocity, pos, vec4(velocity_resolved, 0.0, 0.0));
 
 #endif
 

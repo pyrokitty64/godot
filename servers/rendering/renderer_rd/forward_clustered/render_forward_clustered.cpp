@@ -2529,7 +2529,12 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 			resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 
 			if (resolve_velocity_buffer) {
-				RD::get_singleton()->texture_resolve_multisample(rb->get_velocity_buffer(true, v), rb->get_velocity_buffer(false, v));
+				if (using_taa) {
+					// TAA clears motion vectors to an invalid value; a plain average would mix it into edge pixels.
+					resolve_effects->resolve_velocity(rb->get_velocity_buffer(true, v), rb->get_velocity_buffer(false, v), rb->get_internal_size(), texture_multisamples[msaa]);
+				} else {
+					RD::get_singleton()->texture_resolve_multisample(rb->get_velocity_buffer(true, v), rb->get_velocity_buffer(false, v));
+				}
 			}
 		}
 	}

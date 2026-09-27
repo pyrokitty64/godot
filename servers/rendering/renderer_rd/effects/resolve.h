@@ -50,6 +50,7 @@ private:
 		RESOLVE_MODE_GI,
 		RESOLVE_MODE_GI_VOXEL_GI,
 		RESOLVE_MODE_DEPTH,
+		RESOLVE_MODE_VELOCITY,
 		RESOLVE_MODE_MAX
 	};
 
@@ -73,6 +74,7 @@ public:
 
 	void resolve_gi(RID p_source_depth, RID p_source_normal_roughness, RID p_source_voxel_gi, RID p_dest_depth, RID p_dest_normal_roughness, RID p_dest_voxel_gi, Vector2i p_screen_size, int p_samples);
 	void resolve_depth(RID p_source_depth, RID p_dest_depth, Vector2i p_screen_size, int p_samples);
+	void resolve_velocity(RID p_source_velocity, RID p_dest_velocity, Vector2i p_screen_size, int p_samples);
 	void resolve_depth_raster(RID p_source_rd_texture, RID p_dest_framebuffer, int p_samples);
 };
 
