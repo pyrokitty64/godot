@@ -142,32 +142,33 @@ void populate_group_shared_memory(uvec2 group_id, uint group_index) {
 								VELOCITY
 ------------------------------------------------------------------------------*/
 
-void depth_test_min(uvec2 pos, inout float min_depth, inout uvec2 min_pos) {
+void depth_test_closest(uvec2 pos, inout float closest_depth, inout uvec2 closest_pos) {
 	float depth = load_depth(pos);
 
-	if (depth < min_depth) {
-		min_depth = depth;
-		min_pos = pos;
+	// Reverse Z: a larger depth is closer to the camera.
+	if (depth > closest_depth) {
+		closest_depth = depth;
+		closest_pos = pos;
 	}
 }
 
 // Returns velocity with closest depth (3x3 neighborhood)
 void get_closest_pixel_velocity_3x3(in uvec2 group_pos, uvec2 group_top_left, out vec2 velocity) {
-	float min_depth = 1.0;
-	uvec2 min_pos = group_pos;
+	float closest_depth = 0.0;
+	uvec2 closest_pos = group_pos;
 
-	depth_test_min(group_pos + kOffsets3x3[0], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[1], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[2], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[3], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[4], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[5], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[6], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[7], min_depth, min_pos);
-	depth_test_min(group_pos + kOffsets3x3[8], min_depth, min_pos);
+	depth_test_closest(group_pos + kOffsets3x3[0], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[1], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[2], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[3], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[4], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[5], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[6], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[7], closest_depth, closest_pos);
+	depth_test_closest(group_pos + kOffsets3x3[8], closest_depth, closest_pos);
 
-	// Velocity out
-	velocity = imageLoad(velocity_buffer, ivec2(group_top_left + min_pos)).xy;
+	// Velocity out. The tile has a border, so a group position is kBorderSize pixels past group_top_left.
+	velocity = imageLoad(velocity_buffer, ivec2(group_top_left + closest_pos + kBorderSize)).xy;
 }
 
 /*------------------------------------------------------------------------------
