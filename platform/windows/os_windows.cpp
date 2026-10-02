@@ -37,6 +37,7 @@
 #include "winrt_utils.h"
 
 #include "core/config/engine.h"
+#include "core/io/async_logger.h"
 #include "core/debugger/engine_debugger.h"
 #include "core/debugger/script_debugger.h"
 #include "core/os/main_loop.h"
@@ -2962,7 +2963,7 @@ OS_Windows::OS_Windows(HINSTANCE _hInstance) {
 	}
 
 	Vector<Logger *> loggers;
-	loggers.push_back(memnew(WindowsTerminalLogger));
+	loggers.push_back(memnew(AsyncLogger(memnew(WindowsTerminalLogger))));
 	_set_logger(memnew(CompositeLogger(loggers)));
 }
 

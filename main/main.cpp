@@ -41,6 +41,7 @@
 #include "core/extension/gdextension_manager.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
+#include "core/io/async_logger.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/file_access_zip.h"
@@ -2322,7 +2323,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			base_path = GLOBAL_GET("debug/file_logging/log_path");
 			max_files = GLOBAL_GET("debug/file_logging/max_log_files");
 		}
-		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
+		OS::get_singleton()->add_logger(memnew(AsyncLogger(memnew(RotatedFileLogger(base_path, max_files)))));
 	}
 
 	if (main_args.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
