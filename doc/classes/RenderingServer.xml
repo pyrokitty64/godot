@@ -135,6 +135,14 @@
 				Sets the compositor used by this camera. Equivalent to [member Camera3D.compositor].
 			</description>
 		</method>
+		<method name="camera_set_cull_far">
+			<return type="void" />
+			<param index="0" name="camera" type="RID" />
+			<param index="1" name="distance" type="float" />
+			<description>
+				Culls the camera's view against a far plane [param distance] units along its view direction, in place of the far plane of its projection. Rendering still uses the projection unchanged. Use it with a projection whose far plane is tilted or open, such as one with an oblique near plane for a mirror or portal set with [method camera_set_xr_projections]. [code]0[/code] (the default) culls against the projection's own far plane.
+			</description>
+		</method>
 		<method name="camera_set_cull_mask">
 			<return type="void" />
 			<param index="0" name="camera" type="RID" />

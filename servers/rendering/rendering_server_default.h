@@ -725,6 +725,7 @@ public:
 	FUNC3(camera_set_xr_projections, RID, TypedArray<Projection>, TypedArray<Transform3D>)
 	FUNC2(camera_set_transform, RID, const Transform3D &)
 	FUNC2(camera_set_cull_mask, RID, uint32_t)
+	FUNC2(camera_set_cull_far, RID, float)
 	FUNC2(camera_set_environment, RID, RID)
 	FUNC2(camera_set_camera_attributes, RID, RID)
 	FUNC2(camera_set_compositor, RID, RID)

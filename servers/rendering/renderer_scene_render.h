@@ -308,6 +308,7 @@ public:
 		bool is_orthogonal;
 		uint32_t visible_layers;
 		bool vaspect;
+		float cull_far = 0.0f; // > 0 replaces the far plane of the culling frustum
 
 		// Main/center projection
 		Transform3D main_transform;
