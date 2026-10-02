@@ -85,4 +85,7 @@ struct SceneData {
 	float IBL_exposure_normalization;
 	uint camera_visible_layers;
 	float pass_alpha_multiplier;
+
+	// View space: a vertex is kept where dot(vec4(vertex, 1.0), clip_plane) >= 0.0. Zero clips nothing.
+	vec4 clip_plane;
 };

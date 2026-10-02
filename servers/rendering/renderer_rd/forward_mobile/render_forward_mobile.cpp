@@ -3659,6 +3659,9 @@ RenderForwardMobile::RenderForwardMobile() {
 		}
 #endif
 	}
+	if (RD::get_singleton()->has_feature(RD::SUPPORTS_CLIP_DISTANCE)) {
+		defines += "\n#define USE_CLIP_DISTANCE\n";
+	}
 
 	scene_shader.init(defines);
 

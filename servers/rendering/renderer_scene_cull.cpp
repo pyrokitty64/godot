@@ -154,11 +154,11 @@ void RendererSceneCull::camera_set_cull_mask(RID p_camera, uint32_t p_layers) {
 	camera->visible_layers = p_layers;
 }
 
-void RendererSceneCull::camera_set_cull_far(RID p_camera, float p_distance) {
+void RendererSceneCull::camera_set_clip_plane(RID p_camera, const Plane &p_plane) {
 	Camera *camera = camera_owner.get_or_null(p_camera);
 	ERR_FAIL_NULL(camera);
 
-	camera->cull_far = MAX(p_distance, 0.0f);
+	camera->clip_plane = p_plane.normal.is_zero_approx() ? Plane() : p_plane.normalized();
 }
 
 void RendererSceneCull::camera_set_environment(RID p_camera, RID p_env) {
@@ -2798,7 +2798,7 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 		ERR_FAIL_MSG("Unsupported camera setup.");
 	}
 
-	camera_data.cull_far = camera->cull_far;
+	camera_data.clip_plane = camera->clip_plane;
 
 	RID environment = _render_get_environment(p_camera, p_scenario);
 	RID compositor = _render_get_compositor(p_camera, p_scenario);
@@ -3379,12 +3379,10 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	/* STEP 2 - CULL */
 
 	Vector<Plane> planes = p_camera_data->main_projection.get_projection_planes(p_camera_data->main_transform);
-	if (p_camera_data->cull_far > 0.0f) {
-		// An oblique near plane (mirrors, portals) tilts the projection's far plane with it, often
-		// until a corner of the frustum is open and nothing in that direction is ever culled.
-		// Cull against a plain far plane at cull_far along the view direction instead.
-		const Vector3 forward = -p_camera_data->main_transform.basis.get_column(2).normalized();
-		planes.write[Projection::PLANE_FAR] = Plane(forward, p_camera_data->main_transform.origin + forward * p_camera_data->cull_far);
+	if (!p_camera_data->clip_plane.normal.is_zero_approx()) {
+		// Everything behind the clip plane is clipped on the GPU, so cull it here too. Frustum
+		// planes face out of the frustum.
+		planes.write[Projection::PLANE_NEAR] = -p_camera_data->clip_plane;
 	}
 	cull.frustum = Frustum(planes);
 

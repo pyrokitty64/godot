@@ -84,7 +84,7 @@ public:
 		float size;
 		Vector2 offset;
 		uint32_t visible_layers;
-		float cull_far; // > 0 replaces the projection's far plane for culling only
+		Plane clip_plane; // Keeps the side its normal faces; a zero normal clips nothing.
 		bool vaspect;
 		RID env;
 		RID attributes;
@@ -96,7 +96,6 @@ public:
 
 		Camera() {
 			visible_layers = 0xFFFFFFFF;
-			cull_far = 0.0;
 			fov = 75;
 			type = PERSPECTIVE;
 			znear = 0.05;
@@ -118,7 +117,7 @@ public:
 	virtual void camera_set_xr_projections(RID p_camera, TypedArray<Projection> p_projections, TypedArray<Transform3D> p_offsets = TypedArray<Transform3D>());
 	virtual void camera_set_transform(RID p_camera, const Transform3D &p_transform);
 	virtual void camera_set_cull_mask(RID p_camera, uint32_t p_layers);
-	virtual void camera_set_cull_far(RID p_camera, float p_distance);
+	virtual void camera_set_clip_plane(RID p_camera, const Plane &p_plane);
 	virtual void camera_set_environment(RID p_camera, RID p_env);
 	virtual void camera_set_camera_attributes(RID p_camera, RID p_attributes);
 	virtual void camera_set_compositor(RID p_camera, RID p_compositor);

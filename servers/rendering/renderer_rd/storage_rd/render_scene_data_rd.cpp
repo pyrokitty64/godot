@@ -118,6 +118,16 @@ void RenderSceneDataRD::update_ubo(RID p_uniform_buffer, RSE::ViewportDebugDraw 
 	ubo.z_far = z_far;
 	ubo.z_near = z_near;
 
+	if (clip_plane.normal.is_zero_approx()) {
+		ubo.clip_plane[0] = ubo.clip_plane[1] = ubo.clip_plane[2] = ubo.clip_plane[3] = 0.0f;
+	} else {
+		Plane view_plane = cam_transform.xform_inv(clip_plane);
+		ubo.clip_plane[0] = view_plane.normal.x;
+		ubo.clip_plane[1] = view_plane.normal.y;
+		ubo.clip_plane[2] = view_plane.normal.z;
+		ubo.clip_plane[3] = -view_plane.d;
+	}
+
 	ubo.flags = 0;
 
 	ubo.flags |= p_pancake_shadows ? SCENE_DATA_FLAGS_USE_PANCAKE_SHADOWS : 0;

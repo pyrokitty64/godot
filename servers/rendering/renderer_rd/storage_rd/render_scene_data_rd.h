@@ -44,6 +44,7 @@ public:
 
 	Transform3D cam_transform;
 	Projection cam_projection;
+	Plane clip_plane; // World space; keeps the side its normal faces; a zero normal clips nothing.
 	Vector2 taa_jitter;
 	float taa_frame_count = 0.0f;
 	uint32_t camera_visible_layers;
@@ -185,6 +186,8 @@ private:
 		float IBL_exposure_normalization; // Adjusts for baked exposure.
 		uint32_t camera_visible_layers;
 		float pass_alpha_multiplier;
+
+		float clip_plane[4]; // View space: a vertex is kept where dot(vec4(vertex, 1), clip_plane) >= 0.
 	};
 
 	struct UBODATA {

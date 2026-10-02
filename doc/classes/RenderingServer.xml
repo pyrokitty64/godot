@@ -127,20 +127,20 @@
 				Sets the camera_attributes created with [method camera_attributes_create] to the given camera.
 			</description>
 		</method>
+		<method name="camera_set_clip_plane">
+			<return type="void" />
+			<param index="0" name="camera" type="RID" />
+			<param index="1" name="plane" type="Plane" />
+			<description>
+				Clips everything on the far side of [param plane] (world space) from the camera's view: only geometry on the side its normal faces is drawn, and the rest is culled. Use it for mirrors and portals, where nothing behind the glass may show, while keeping an ordinary projection. Shadows, reflection probes and other passes are not clipped. A [Plane] with a zero normal (the default) clips nothing. Requires GPU support for clip distances (all desktop GPUs); otherwise the plane only culls.
+			</description>
+		</method>
 		<method name="camera_set_compositor">
 			<return type="void" />
 			<param index="0" name="camera" type="RID" />
 			<param index="1" name="compositor" type="RID" />
 			<description>
 				Sets the compositor used by this camera. Equivalent to [member Camera3D.compositor].
-			</description>
-		</method>
-		<method name="camera_set_cull_far">
-			<return type="void" />
-			<param index="0" name="camera" type="RID" />
-			<param index="1" name="distance" type="float" />
-			<description>
-				Culls the camera's view against a far plane [param distance] units along its view direction, in place of the far plane of its projection. Rendering still uses the projection unchanged. Use it with a projection whose far plane is tilted or open, such as one with an oblique near plane for a mirror or portal set with [method camera_set_xr_projections]. [code]0[/code] (the default) culls against the projection's own far plane.
 			</description>
 		</method>
 		<method name="camera_set_cull_mask">

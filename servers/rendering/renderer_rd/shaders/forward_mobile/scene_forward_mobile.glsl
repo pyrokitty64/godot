@@ -643,6 +643,10 @@ void vertex_shader(in vec3 vertex,
 	gl_Position = projection_matrix * vec4(vertex_interp, 1.0);
 #endif // OVERRIDE_POSITION
 
+#ifdef USE_CLIP_DISTANCE
+	gl_ClipDistance[0] = dot(vec4(vertex_interp, 1.0), scene_data.clip_plane);
+#endif
+
 #if defined(Z_CLIP_SCALE_USED) && !defined(SHADOW_PASS)
 	gl_Position.z = mix(gl_Position.w, gl_Position.z, z_clip_scale);
 #endif
