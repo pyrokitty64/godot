@@ -91,39 +91,7 @@ void WorkerThreadPool::_process_task(Task *p_task) {
 #endif
 
 	if (p_task->group) {
-		// Handling a group
-		bool do_post = false;
-
-		while (true) {
-			uint32_t work_index = p_task->group->index.postincrement();
-
-			if (work_index >= p_task->group->max) {
-				break;
-			}
-			if (p_task->native_group_func) {
-				p_task->native_group_func(p_task->native_func_userdata, work_index);
-			} else if (p_task->template_userdata) {
-				p_task->template_userdata->callback_indexed(work_index);
-			} else {
-				p_task->callable.call(work_index);
-			}
-
-			// This is the only way to ensure posting is done when all tasks are really complete.
-			uint32_t completed_amount = p_task->group->completed_index.increment();
-
-			if (completed_amount == p_task->group->max) {
-				do_post = true;
-			}
-		}
-
-		if (do_post && p_task->template_userdata) {
-			memdelete(p_task->template_userdata); // This is no longer needed at this point, so get rid of it.
-		}
-
-		if (do_post) {
-			p_task->group->done_semaphore.post();
-			p_task->group->completed.set_to(true);
-		}
+		_process_group_elements(p_task->group);
 		uint32_t max_users = p_task->group->tasks_used + 1; // Add 1 because the thread waiting for it is also user. Read before to avoid another thread freeing task after increment.
 		uint32_t finished_users = p_task->group->finished.increment();
 
@@ -181,6 +149,42 @@ void WorkerThreadPool::_process_task(Task *p_task) {
 	set_current_thread_safe_for_nodes(safe_for_nodes_backup);
 	MessageQueue::set_thread_singleton_override(call_queue_backup);
 #endif
+}
+
+// Runs elements of the group until none is left unstarted, posting the group if this completes the last one.
+void WorkerThreadPool::_process_group_elements(Group *p_group) {
+	bool do_post = false;
+
+	while (true) {
+		uint32_t work_index = p_group->index.postincrement();
+
+		if (work_index >= p_group->max) {
+			break;
+		}
+		if (p_group->native_func) {
+			p_group->native_func(p_group->native_func_userdata, work_index);
+		} else if (p_group->template_userdata) {
+			p_group->template_userdata->callback_indexed(work_index);
+		} else {
+			p_group->callable.call(work_index);
+		}
+
+		// This is the only way to ensure posting is done when all tasks are really complete.
+		uint32_t completed_amount = p_group->completed_index.increment();
+
+		if (completed_amount == p_group->max) {
+			do_post = true;
+		}
+	}
+
+	if (do_post && p_group->template_userdata) {
+		memdelete(p_group->template_userdata); // This is no longer needed at this point, so get rid of it.
+	}
+
+	if (do_post) {
+		p_group->done_semaphore.post();
+		p_group->completed.set_to(true);
+	}
 }
 
 void WorkerThreadPool::_thread_function(void *p_user) {
@@ -676,15 +680,15 @@ WorkerThreadPool::GroupID WorkerThreadPool::_add_group_task(const Callable &p_ca
 
 	} else {
 		group->tasks_used = p_tasks;
+		group->callable = p_callable;
+		group->native_func = p_func;
+		group->native_func_userdata = p_userdata;
+		group->template_userdata = p_template_userdata;
 		tasks_posted = (Task **)alloca(sizeof(Task *) * p_tasks);
 		for (int i = 0; i < p_tasks; i++) {
 			Task *task = task_allocator.alloc();
-			task->native_group_func = p_func;
-			task->native_func_userdata = p_userdata;
 			task->description = p_description;
 			task->group = group;
-			task->callable = p_callable;
-			task->template_userdata = p_template_userdata;
 			tasks_posted[i] = task;
 			// No task ID is used.
 		}
@@ -736,6 +740,12 @@ void WorkerThreadPool::wait_for_group_task_completion(GroupID p_group) {
 
 		if (this == singleton) {
 			_unlock_unlockable_mutexes();
+		}
+		if (group->callable.is_null()) {
+			// Run what no pool thread has started yet instead of only sleeping, so the group completes even if
+			// every pool thread is blocked on something the caller holds until it does (e.g. ShaderRD's version
+			// mutex). Callables are left to the pool so that script code never runs on the awaiting thread.
+			_process_group_elements(group);
 		}
 		group->done_semaphore.wait();
 		if (this == singleton) {

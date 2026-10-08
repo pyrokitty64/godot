@@ -69,13 +69,16 @@ private:
 		SafeFlag completed;
 		SafeNumeric<uint32_t> finished;
 		uint32_t tasks_used = 0;
+		Callable callable;
+		void (*native_func)(void *, uint32_t) = nullptr;
+		void *native_func_userdata = nullptr;
+		BaseTemplateUserdata *template_userdata = nullptr;
 	};
 
 	struct Task {
 		TaskID self = -1;
 		Callable callable;
 		void (*native_func)(void *) = nullptr;
-		void (*native_group_func)(void *, uint32_t) = nullptr;
 		void *native_func_userdata = nullptr;
 		String description;
 		Semaphore done_semaphore; // For user threads awaiting.
@@ -177,6 +180,7 @@ private:
 	static void _thread_function(void *p_user);
 
 	void _process_task(Task *p_task);
+	void _process_group_elements(Group *p_group);
 
 	void _post_tasks(Task **p_tasks, uint32_t p_count, bool p_high_priority, MutexLock<BinaryMutex> &p_lock, bool p_pump_task);
 	void _notify_threads(const ThreadData *p_current_thread_data, uint32_t p_process_count, uint32_t p_promote_count);
