@@ -142,6 +142,8 @@ public:
 	virtual bool is_initialized() const override;
 	virtual bool initialize() override;
 	virtual void uninitialize() override;
+	void end_session(); // Deferred OpenXR: ends the session; `session_destroyed` follows once everything is torn down.
+	bool is_headset_available() const; // Deferred OpenXR: the runtime reports a headset, so initialize() can start a session.
 	virtual Dictionary get_system_info() override;
 
 	virtual void trigger_haptic_pulse(const String &p_action_name, const StringName &p_tracker_name, double p_frequency, double p_amplitude, double p_duration_sec, double p_delay_sec = 0) override;

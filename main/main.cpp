@@ -2884,6 +2884,8 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 	GLOBAL_DEF_BASIC("xr/openxr/submit_depth_buffer", false);
 	GLOBAL_DEF_BASIC("xr/openxr/startup_alert", true);
+	// Start without OpenXR; OpenXRInterface.initialize() connects to the runtime later and end_session() lets go of it.
+	GLOBAL_DEF_RST_BASIC("xr/openxr/deferred", false);
 
 	// OpenXR project extensions settings.
 #ifndef DISABLE_DEPRECATED

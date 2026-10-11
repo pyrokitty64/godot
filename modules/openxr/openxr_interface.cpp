@@ -54,6 +54,7 @@ void OpenXRInterface::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("session_visible"));
 	ADD_SIGNAL(MethodInfo("session_loss_pending"));
 	ADD_SIGNAL(MethodInfo("instance_exiting"));
+	ADD_SIGNAL(MethodInfo("session_destroyed"));
 	ADD_SIGNAL(MethodInfo("pose_recentered"));
 	ADD_SIGNAL(MethodInfo("refresh_rate_changed", PropertyInfo(Variant::FLOAT, "refresh_rate")));
 
@@ -62,6 +63,8 @@ void OpenXRInterface::_bind_methods() {
 
 	// State
 	ClassDB::bind_method(D_METHOD("get_session_state"), &OpenXRInterface::get_session_state);
+	ClassDB::bind_method(D_METHOD("end_session"), &OpenXRInterface::end_session);
+	ClassDB::bind_method(D_METHOD("is_headset_available"), &OpenXRInterface::is_headset_available);
 
 	// User presence
 	ADD_SIGNAL(MethodInfo("user_presence_changed", PropertyInfo(Variant::BOOL, "is_user_present")));
@@ -386,8 +389,8 @@ void OpenXRInterface::_load_action_map() {
 				openxr_api->interaction_profile_suggest_bindings(ip);
 
 				// And record it in our array so we can clean it up later on
-				if (interaction_profile_array.has(ip)) {
-					interaction_profile_array.push_back(ip);
+				if (!interaction_profiles.has(ip)) {
+					interaction_profiles.push_back(ip);
 				}
 			}
 		}
@@ -698,16 +701,27 @@ bool OpenXRInterface::initialize() {
 
 	if (openxr_api == nullptr) {
 		return false;
-	} else if (!openxr_api->is_initialized()) {
-		return false;
 	} else if (initialized) {
 		return true;
+	} else if (openxr_api->is_deferred()) {
+		// Deferred OpenXR makes its device on the runtime only now.
+		if (!openxr_api->initialize_deferred()) {
+			return false;
+		}
+	} else if (!openxr_api->is_initialized()) {
+		return false;
 	}
 
 	// load up our action sets before setting up our session, note that our profiles are suggestions, OpenXR takes ownership of (re)binding
 	_load_action_map();
 
 	if (!openxr_api->initialize_session()) {
+		if (openxr_api->is_deferred()) {
+			free_trackers();
+			free_interaction_profiles();
+			free_action_sets();
+			openxr_api->end_deferred();
+		}
 		return false;
 	}
 
@@ -757,7 +771,22 @@ void OpenXRInterface::uninitialize() {
 
 	DisplayServer::get_singleton()->unregister_additional_output(this);
 
+	if (openxr_api && openxr_api->is_deferred()) {
+		// Destroys the session and our device on the runtime; the next initialize() starts another.
+		openxr_api->end_deferred();
+	}
+
 	initialized = false;
+}
+
+void OpenXRInterface::end_session() {
+	if (openxr_api && initialized) {
+		openxr_api->request_end_session();
+	}
+}
+
+bool OpenXRInterface::is_headset_available() const {
+	return openxr_api && openxr_api->is_headset_available();
 }
 
 Dictionary OpenXRInterface::get_system_info() {
@@ -1246,6 +1275,12 @@ void OpenXRInterface::handle_hand_tracking(const String &p_path, OpenXRHandTrack
 }
 
 void OpenXRInterface::process() {
+	if (openxr_api && openxr_api->take_teardown_request()) {
+		uninitialize();
+		emit_signal(SNAME("session_destroyed"));
+		return;
+	}
+
 	if (openxr_api) {
 		// do our normal process
 		if (openxr_api->process()) {

@@ -229,4 +229,11 @@ public:
 	virtual bool create_projection_fov(const XrFovf p_fov, double p_z_near, double p_z_far, Projection &r_camera_matrix) = 0; // `create_projection_fov` creates a proper projection matrix based on asymmetric FOV data provided by OpenXR.
 	virtual RID get_texture(void *p_swapchain_graphics_data, int p_image_index) = 0; // `get_texture` returns a Godot texture RID for the current active texture in our swapchain.
 	virtual RID get_density_map(void *p_swapchain_graphics_data, int p_image_index) = 0; // `get_density_map` returns a Godot texture RID for the current active density map in our swapchain (if any).
+
+	// Deferred OpenXR (`xr/openxr/deferred`): the renderer's device exists before OpenXR, so the graphics
+	// extension makes its own device through the runtime and copies each rendered image across.
+	virtual bool create_deferred_graphics() { return false; } // Called once the instance and system exist.
+	virtual void destroy_deferred_graphics() {} // Called before the instance is destroyed.
+	virtual void on_post_draw_swapchain(void *p_swapchain_graphics_data, int p_image_index) {} // The renderer has recorded this frame into the image.
+	virtual void on_swapchain_release(void *p_swapchain_graphics_data, int p_image_index) {} // The frame is submitted; the image goes back to the runtime next.
 };

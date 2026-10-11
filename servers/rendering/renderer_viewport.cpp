@@ -1018,6 +1018,8 @@ void RendererViewport::viewport_set_use_xr(RID p_viewport, bool p_use_xr) {
 	// Re-configure the 3D render buffers when disabling XR. They'll get
 	// re-configured when enabling XR in draw_viewports().
 	if (!p_use_xr) {
+		// The XR interface may have limited rendering to a region of its images.
+		RSG::texture_storage->render_target_set_render_region(viewport->render_target, Rect2i());
 		viewport->view_count = 1;
 		_configure_3d_render_buffers(viewport);
 	}

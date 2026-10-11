@@ -188,6 +188,7 @@ private:
 	void _validate_limit_size();
 	void _update_viewport_size();
 	void _update_window_size();
+	virtual void _update_size_after_xr() override { _update_viewport_size(); }
 
 	void _propagate_window_notification(Node *p_node, int p_notification);
 

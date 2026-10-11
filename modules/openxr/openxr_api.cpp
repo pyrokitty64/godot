@@ -38,14 +38,11 @@
 #include "core/config/project_settings.h"
 #include "core/object/callable_mp.h"
 #include "core/os/memory.h"
+#include "core/os/os.h"
 #include "core/profiling/profiling.h"
 #include "core/version.h"
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_globals.h"
-
-#ifdef ANDROID_ENABLED
-#include "core/os/os.h"
-#endif
 
 #include "openxr_platform_inc.h" // IWYU pragma: keep.
 
@@ -263,6 +260,10 @@ bool OpenXRAPI::OpenXRSwapChainInfo::release() {
 	OpenXRAPI *openxr_api = OpenXRAPI::get_singleton();
 	ERR_FAIL_NULL_V(openxr_api, false);
 
+	if (openxr_api->get_graphics_extension()) {
+		openxr_api->get_graphics_extension()->on_swapchain_release(swapchain_graphics_data, image_index);
+	}
+
 	XrSwapchainImageReleaseInfo swapchain_image_release_info = {
 		XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO, // type
 		nullptr // next
@@ -283,6 +284,14 @@ RID OpenXRAPI::OpenXRSwapChainInfo::get_image() {
 		return OpenXRAPI::get_singleton()->get_graphics_extension()->get_texture(swapchain_graphics_data, image_index);
 	} else {
 		return RID();
+	}
+}
+
+void OpenXRAPI::OpenXRSwapChainInfo::post_draw() {
+	OpenXRAPI *openxr_api = OpenXRAPI::get_singleton();
+
+	if (image_acquired && openxr_api && openxr_api->get_graphics_extension()) {
+		openxr_api->get_graphics_extension()->on_post_draw_swapchain(swapchain_graphics_data, image_index);
 	}
 }
 
@@ -922,9 +931,7 @@ bool OpenXRAPI::load_supported_view_configuration_views(XrViewConfigurationType 
 }
 
 void OpenXRAPI::destroy_instance() {
-	view_configuration_views.clear();
-	supported_view_configuration_types.clear();
-	supported_environment_blend_modes.clear();
+	release_system();
 
 	if (instance != XR_NULL_HANDLE) {
 		for (OpenXRExtensionWrapper *wrapper : registered_extension_wrappers) {
@@ -1328,7 +1335,9 @@ bool OpenXRAPI::create_main_swapchains(const Size2i &p_size) {
 
 	// We start with our color swapchain...
 	if (color_swapchain_format != 0) {
-		if (!render_state.main_swapchains[OPENXR_SWAPCHAIN_COLOR].create(0, XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT, color_swapchain_format, render_state.main_swapchain_size.width, render_state.main_swapchain_size.height, sample_count, render_state.primary_view_count, true)) {
+		// Deferred OpenXR copies the rendered image into the swapchain image.
+		XrSwapchainUsageFlags color_usage = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT | (deferred ? XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT : 0);
+		if (!render_state.main_swapchains[OPENXR_SWAPCHAIN_COLOR].create(0, color_usage, color_swapchain_format, render_state.main_swapchain_size.width, render_state.main_swapchain_size.height, sample_count, render_state.primary_view_count, true)) {
 			return false;
 		}
 
@@ -1427,6 +1436,7 @@ void OpenXRAPI::destroy_session() {
 	}
 	local_floor_emulation.enabled = false;
 	local_floor_emulation.should_reset_floor_height = false;
+	play_space_is_dirty = true; // A new session needs its own play space.
 
 	supported_reference_spaces.clear();
 
@@ -1568,6 +1578,9 @@ bool OpenXRAPI::on_state_loss_pending() {
 		wrapper->on_state_loss_pending();
 	}
 
+	// The headset went away; deferred OpenXR ends the session and waits for the headset again.
+	teardown_requested = deferred;
+
 	return true;
 }
 
@@ -1581,6 +1594,8 @@ bool OpenXRAPI::on_state_exiting() {
 	for (OpenXRExtensionWrapper *wrapper : registered_extension_wrappers) {
 		wrapper->on_state_exiting();
 	}
+
+	teardown_requested = deferred;
 
 	return true;
 }
@@ -1718,6 +1733,7 @@ bool OpenXRAPI::resolve_instance_openxr_symbols() {
 	OPENXR_API_INIT_XR_FUNC_V(xrPathToString);
 	OPENXR_API_INIT_XR_FUNC_V(xrPollEvent);
 	OPENXR_API_INIT_XR_FUNC_V(xrReleaseSwapchainImage);
+	OPENXR_API_INIT_XR_FUNC_V(xrRequestExitSession);
 	OPENXR_API_INIT_XR_FUNC_V(xrResultToString);
 	OPENXR_API_INIT_XR_FUNC_V(xrStringToPath);
 	OPENXR_API_INIT_XR_FUNC_V(xrSuggestInteractionProfileBindings);
@@ -1746,6 +1762,19 @@ XrResult OpenXRAPI::get_instance_proc_addr(const char *p_name, PFN_xrVoidFunctio
 bool OpenXRAPI::initialize(const String &p_rendering_driver) {
 	ERR_FAIL_COND_V_MSG(instance != XR_NULL_HANDLE, false, "OpenXR instance was already created");
 
+	if (!initialize_instance(p_rendering_driver)) {
+		return false;
+	}
+
+	if (!initialize_system()) {
+		destroy_instance();
+		return false;
+	}
+
+	return true;
+}
+
+bool OpenXRAPI::initialize_instance(const String &p_rendering_driver) {
 	if (!openxr_loader_init()) {
 		return false;
 	}
@@ -1786,9 +1815,11 @@ bool OpenXRAPI::initialize(const String &p_rendering_driver) {
 		ERR_FAIL_V_MSG(false, "OpenXR: Unsupported rendering device.");
 	}
 
-	// Also register our rendering extensions
-	register_extension_wrapper(memnew(OpenXRFBUpdateSwapchainExtension(p_rendering_driver)));
-	register_extension_wrapper(memnew(OpenXRFBFoveationExtension(p_rendering_driver)));
+	// Also register our rendering extensions, once: deferred OpenXR initializes again after each session.
+	if (OpenXRFBFoveationExtension::get_singleton() == nullptr) {
+		register_extension_wrapper(memnew(OpenXRFBUpdateSwapchainExtension(p_rendering_driver)));
+		register_extension_wrapper(memnew(OpenXRFBFoveationExtension(p_rendering_driver)));
+	}
 
 	// initialize
 	for (OpenXRExtensionWrapper *wrapper : registered_extension_wrappers) {
@@ -1815,27 +1846,112 @@ bool OpenXRAPI::initialize(const String &p_rendering_driver) {
 		return false;
 	}
 
-	if (!get_system_info()) {
-		destroy_instance();
-		return false;
-	}
-
-	if (!load_supported_view_configuration_types()) {
-		destroy_instance();
-		return false;
-	}
-
-	if (!load_supported_view_configuration_views(view_configuration)) {
-		destroy_instance();
-		return false;
-	}
-
-	if (!load_supported_environmental_blend_modes()) {
-		destroy_instance();
-		return false;
-	}
-
 	return true;
+}
+
+bool OpenXRAPI::initialize_system() {
+	return get_system_info() &&
+			load_supported_view_configuration_types() &&
+			load_supported_view_configuration_views(view_configuration) &&
+			load_supported_environmental_blend_modes() &&
+			(!deferred || graphics_extension->create_deferred_graphics());
+}
+
+void OpenXRAPI::release_system() {
+	view_configuration_views.clear();
+	supported_view_configuration_types.clear();
+	supported_environment_blend_modes.clear();
+
+	if (deferred && graphics_extension != nullptr) {
+		graphics_extension->destroy_deferred_graphics();
+	}
+}
+
+void OpenXRAPI::start_watching() {
+	headset_watcher.start(_watch_headset, this);
+}
+
+void OpenXRAPI::stop_watching() {
+	if (headset_watcher.is_started()) {
+		watcher_stop.set();
+		headset_watcher.wait_to_finish();
+	}
+}
+
+void OpenXRAPI::_watch_headset(void *p_userdata) {
+	OpenXRAPI *api = (OpenXRAPI *)p_userdata;
+	const String rendering_driver = OS::get_singleton()->get_current_rendering_driver_name();
+
+	while (!api->watcher_stop.is_set()) {
+		{
+			MutexLock lock(api->instance_mutex);
+			if (!api->in_session.is_set() && api->instance == XR_NULL_HANDLE) {
+				uint64_t start = OS::get_singleton()->get_ticks_usec();
+				if (api->initialize_instance(rendering_driver)) {
+					print_line("OpenXR: instance created in ", (OS::get_singleton()->get_ticks_usec() - start) / 1000, " ms, watching for a headset");
+				}
+			}
+			if (!api->in_session.is_set() && api->instance != XR_NULL_HANDLE) {
+				XrSystemGetInfo system_get_info = { XR_TYPE_SYSTEM_GET_INFO, nullptr, api->form_factor };
+				XrSystemId system_id;
+				XrResult result = api->xrGetSystem(api->instance, &system_get_info, &system_id);
+				api->headset_available.set_to(XR_SUCCEEDED(result));
+				if (XR_FAILED(result) && result != XR_ERROR_FORM_FACTOR_UNAVAILABLE) {
+					print_line("OpenXR: lost the runtime [", api->get_error_string(result), "], connecting again");
+					api->destroy_instance();
+				}
+			}
+		}
+
+		for (int i = 0; i < 20 && !api->watcher_stop.is_set(); i++) {
+			OS::get_singleton()->delay_usec(100'000);
+		}
+	}
+}
+
+bool OpenXRAPI::initialize_deferred() {
+	MutexLock lock(instance_mutex);
+	if (instance == XR_NULL_HANDLE) {
+		return false;
+	}
+
+	if (!initialize_system()) {
+		release_system();
+		return false;
+	}
+
+	in_session.set();
+	teardown_requested = false;
+	instance_lost = false;
+	return true;
+}
+
+void OpenXRAPI::end_deferred() {
+	MutexLock lock(instance_mutex);
+	destroy_session();
+	release_system();
+	if (instance_lost) {
+		destroy_instance();
+	}
+	in_session.clear();
+}
+
+void OpenXRAPI::request_end_session() {
+	if (running && session != XR_NULL_HANDLE) {
+		// The runtime moves the session through STOPPING (on_state_stopping ends it) to EXITING.
+		XrResult result = xrRequestExitSession(session);
+		if (XR_SUCCEEDED(result)) {
+			return;
+		}
+		print_line("OpenXR: failed to request session exit [", get_error_string(result), "], tearing down now");
+	}
+	teardown_requested = true;
+}
+
+bool OpenXRAPI::take_teardown_request() {
+	bool requested = teardown_requested;
+	teardown_requested = false;
+	return requested;
 }
 
 bool OpenXRAPI::initialize_session() {
@@ -1870,6 +1986,7 @@ bool OpenXRAPI::initialize_session() {
 }
 
 void OpenXRAPI::finish() {
+	stop_watching();
 	destroy_session();
 
 	destroy_instance();
@@ -2214,6 +2331,10 @@ TypedArray<Transform3D> OpenXRAPI::get_camera_offsets(const StringName &p_tracke
 }
 
 bool OpenXRAPI::get_view_offset(uint32_t p_view, Transform3D &r_transform) {
+	if (view_offsets.is_empty()) {
+		// No frame has been located yet (the session isn't synchronized, e.g. the headset isn't on).
+		return false;
+	}
 	ERR_FAIL_UNSIGNED_INDEX_V(p_view, view_offsets.size(), false);
 
 	r_transform = view_offsets[p_view];
@@ -2328,6 +2449,8 @@ bool OpenXRAPI::poll_events() {
 				// We should queue exiting Godot at this point.
 
 				print_verbose(String("OpenXR EVENT: instance loss pending at ") + itos(event->lossTime));
+				teardown_requested = deferred;
+				instance_lost = deferred;
 				return false;
 			} break;
 			case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
@@ -2418,6 +2541,12 @@ bool OpenXRAPI::poll_events() {
 	if (pollResult == XR_EVENT_UNAVAILABLE) {
 		// processed all events in the queue
 		return true;
+	} else if (deferred) {
+		// Typically XR_ERROR_INSTANCE_LOST: the runtime crashed or was closed.
+		print_line("OpenXR: polling events failed [", get_error_string(pollResult), "], tearing down");
+		teardown_requested = true;
+		instance_lost = true;
+		return false;
 	} else {
 		ERR_FAIL_V_MSG(false, "OpenXR: Failed to poll events!");
 	}
@@ -2968,6 +3097,10 @@ void OpenXRAPI::post_draw_viewport(RID p_render_target) {
 	for (OpenXRExtensionWrapper *wrapper : registered_extension_wrappers) {
 		wrapper->on_post_draw_viewport(p_render_target);
 	}
+
+	if (deferred) {
+		render_state.main_swapchains[OPENXR_SWAPCHAIN_COLOR].post_draw();
+	}
 }
 
 void OpenXRAPI::end_frame() {
@@ -3368,6 +3501,12 @@ OpenXRAPI::OpenXRAPI() {
 		}
 
 		submit_depth_buffer = GLOBAL_GET("xr/openxr/submit_depth_buffer");
+
+		deferred = GLOBAL_GET("xr/openxr/deferred");
+		if (deferred) {
+			// Only color images are copied to the runtime's device.
+			submit_depth_buffer = false;
+		}
 	}
 }
 

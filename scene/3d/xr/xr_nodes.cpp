@@ -105,16 +105,23 @@ void XRCamera3D::fti_update_servers_property() {
 }
 
 void XRCamera3D::_update_projections() {
-	if (tracker.is_null()) {
+	Viewport *vp = get_viewport();
+	ERR_FAIL_NULL(vp);
+
+	if (tracker.is_null() || !vp->is_using_xr()) {
+		// Not rendering XR (any more): be an ordinary camera again.
+		if (xr_projections_set) {
+			xr_projections_set = false;
+			Camera3D::_update_camera_mode();
+		}
 		return;
 	}
+	xr_projections_set = true;
 
 	RenderingServer *rendering_server = RenderingServer::get_singleton();
 	ERR_FAIL_NULL(rendering_server);
 	XRServer *xr_server = XRServer::get_singleton();
 	ERR_FAIL_NULL(xr_server);
-	Viewport *vp = get_viewport();
-	ERR_FAIL_NULL(vp);
 
 	Size2 viewport_size = vp->get_visible_rect().size;
 
@@ -212,7 +219,7 @@ Vector3 XRCamera3D::project_local_ray_normal(const Point2 &p_pos) const {
 	ERR_FAIL_NULL_V(xr_server, Vector3());
 
 	Ref<XRInterface> xr_interface = xr_server->get_primary_interface();
-	if (xr_interface.is_null()) {
+	if (xr_interface.is_null() || !xr_projections_set) {
 		// we might be in the editor or have VR turned off, just call superclass
 		return Camera3D::project_local_ray_normal(p_pos);
 	}
@@ -237,7 +244,7 @@ Point2 XRCamera3D::unproject_position(const Vector3 &p_pos) const {
 	ERR_FAIL_NULL_V(xr_server, Vector2());
 
 	Ref<XRInterface> xr_interface = xr_server->get_primary_interface();
-	if (xr_interface.is_null()) {
+	if (xr_interface.is_null() || !xr_projections_set) {
 		// we might be in the editor or have VR turned off, just call superclass
 		return Camera3D::unproject_position(p_pos);
 	}
@@ -267,7 +274,7 @@ Vector3 XRCamera3D::project_position(const Point2 &p_point, real_t p_z_depth) co
 	ERR_FAIL_NULL_V(xr_server, Vector3());
 
 	Ref<XRInterface> xr_interface = xr_server->get_primary_interface();
-	if (xr_interface.is_null()) {
+	if (xr_interface.is_null() || !xr_projections_set) {
 		// we might be in the editor or have VR turned off, just call superclass
 		return Camera3D::project_position(p_point, p_z_depth);
 	}
@@ -297,7 +304,7 @@ Vector<Plane> XRCamera3D::get_frustum() const {
 	ERR_FAIL_NULL_V(xr_server, Vector<Plane>());
 
 	Ref<XRInterface> xr_interface = xr_server->get_primary_interface();
-	if (xr_interface.is_null()) {
+	if (xr_interface.is_null() || !xr_projections_set) {
 		// we might be in the editor or have VR turned off, just call superclass
 		return Camera3D::get_frustum();
 	}

@@ -66,23 +66,61 @@ public:
 	virtual RID get_texture(void *p_swapchain_graphics_data, int p_image_index) override;
 	virtual RID get_density_map(void *p_swapchain_graphics_data, int p_image_index) override;
 
+	virtual bool create_deferred_graphics() override;
+	virtual void destroy_deferred_graphics() override;
+	virtual void on_post_draw_swapchain(void *p_swapchain_graphics_data, int p_image_index) override;
+	virtual void on_swapchain_release(void *p_swapchain_graphics_data, int p_image_index) override;
+
 private:
 	static OpenXRVulkanExtension *singleton;
 	static XrGraphicsBindingVulkanKHR graphics_binding_vulkan; // declaring this as static so we don't need to know its size and we only need it once when creating our session
+
+	// Deferred OpenXR: the renderer draws into `render_rid` on its own device and copies that into
+	// `shared_image`, whose memory is also bound to `imported_image` on our device (created by the
+	// runtime), which we copy into the runtime's swapchain image.
+	struct DeferredImage {
+		VkImage swapchain_image = VK_NULL_HANDLE;
+		VkImage shared_image = VK_NULL_HANDLE;
+		VkDeviceMemory shared_memory = VK_NULL_HANDLE;
+		VkImage imported_image = VK_NULL_HANDLE;
+		VkDeviceMemory imported_memory = VK_NULL_HANDLE;
+		RID render_rid;
+		RID shared_rid;
+	};
 
 	struct SwapchainGraphicsData {
 		bool is_multiview;
 		Vector<RID> texture_rids;
 		Vector<RID> density_map_rids;
+		LocalVector<DeferredImage> deferred_images;
+		uint32_t width = 0;
+		uint32_t height = 0;
+		uint32_t layers = 0;
 	};
 
 	bool check_graphics_api_support(XrVersion p_desired_version);
+	bool is_deferred() const;
+	bool create_deferred_image(DeferredImage &r_image, VkFormat p_vk_format, int p_rd_format, uint32_t p_width, uint32_t p_height, uint32_t p_layers);
+	void free_deferred_image(DeferredImage &r_image);
 
 	VkInstance vulkan_instance = nullptr;
 	VkPhysicalDevice vulkan_physical_device = nullptr;
 	VkDevice vulkan_device = nullptr;
 	uint32_t vulkan_queue_family_index = UINT32_MAX;
 	uint32_t vulkan_queue_index = UINT32_MAX;
+
+	// Deferred OpenXR: the renderer's own device, and what we need on ours to copy across.
+	VkPhysicalDevice godot_physical_device = nullptr;
+	VkDevice godot_device = nullptr;
+	VkQueue godot_queue = nullptr;
+	VkQueue deferred_queue = nullptr;
+	VkCommandPool deferred_command_pool = VK_NULL_HANDLE;
+	VkCommandBuffer deferred_command_buffer = nullptr;
+	VkFence deferred_fence = VK_NULL_HANDLE;
+	PFN_vkVoidFunction get_memory_win32_handle = nullptr; // vkGetMemoryWin32HandleKHR on the renderer's device.
+	uint64_t wait_usec = 0; // `--verbose` timing of on_swapchain_release.
+	uint64_t copy_usec = 0;
+	uint32_t timed_frames = 0;
 
 	EXT_PROTO_XRRESULT_FUNC3(xrGetVulkanGraphicsRequirements2KHR, (XrInstance), p_instance, (XrSystemId), p_system_id, (XrGraphicsRequirementsVulkanKHR *), p_graphics_requirements)
 	EXT_PROTO_XRRESULT_FUNC4(xrCreateVulkanInstanceKHR, (XrInstance), p_instance, (const XrVulkanInstanceCreateInfoKHR *), p_create_info, (VkInstance *), r_vulkan_instance, (VkResult *), r_vulkan_result)

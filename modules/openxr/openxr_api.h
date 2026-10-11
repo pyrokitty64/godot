@@ -38,7 +38,10 @@
 #include "core/math/projection.h"
 #include "core/math/transform_3d.h"
 #include "core/math/vector2.h"
+#include "core/os/mutex.h"
+#include "core/os/thread.h"
 #include "core/string/ustring.h"
+#include "core/templates/safe_refcount.h"
 #include "core/templates/rid_owner.h"
 #include "core/templates/vector.h"
 #include "servers/xr/xr_pose.h"
@@ -78,6 +81,7 @@ public:
 
 		bool acquire(bool &p_should_render);
 		bool release();
+		void post_draw(); // Deferred: the renderer has recorded this frame into the acquired image.
 		RID get_image();
 		RID get_density_map();
 	};
@@ -131,6 +135,17 @@ private:
 	XrReferenceSpaceType requested_reference_space = XR_REFERENCE_SPACE_TYPE_STAGE;
 	XrReferenceSpaceType reference_space = XR_REFERENCE_SPACE_TYPE_LOCAL;
 	bool submit_depth_buffer = false; // if set to true we submit depth buffers to OpenXR if a suitable extension is enabled.
+	bool deferred = false; // `xr/openxr/deferred`: OpenXR starts on OpenXRInterface::initialize() and ends on end_session().
+	bool teardown_requested = false; // Deferred: the session has ended or was lost, tear it down.
+	bool instance_lost = false; // Deferred: the runtime went away, so the teardown destroys the instance too.
+
+	// Deferred: a thread keeps the instance and asks it for a headset every 2 s while there's no session.
+	Thread headset_watcher;
+	SafeFlag watcher_stop;
+	SafeFlag in_session; // OpenXRInterface owns the instance; the watcher leaves it alone.
+	SafeFlag headset_available; // The runtime reported a system at the watcher's last look.
+	Mutex instance_mutex;
+	static void _watch_headset(void *p_userdata);
 
 	// blend mode
 	XrEnvironmentBlendMode environment_blend_mode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -263,6 +278,7 @@ private:
 	EXT_PROTO_XRRESULT_FUNC5(xrPathToString, (XrInstance), instance, (XrPath), path, (uint32_t), bufferCapacityInput, (uint32_t *), bufferCountOutput, (char *), buffer)
 	EXT_PROTO_XRRESULT_FUNC2(xrPollEvent, (XrInstance), instance, (XrEventDataBuffer *), eventData)
 	EXT_PROTO_XRRESULT_FUNC2(xrReleaseSwapchainImage, (XrSwapchain), swapchain, (const XrSwapchainImageReleaseInfo *), releaseInfo)
+	EXT_PROTO_XRRESULT_FUNC1(xrRequestExitSession, (XrSession), session)
 	EXT_PROTO_XRRESULT_FUNC3(xrResultToString, (XrInstance), instance, (XrResult), value, (char *), buffer)
 	EXT_PROTO_XRRESULT_FUNC3(xrStringToPath, (XrInstance), instance, (const char *), pathString, (XrPath *), path)
 	EXT_PROTO_XRRESULT_FUNC2(xrSuggestInteractionProfileBindings, (XrInstance), instance, (const XrInteractionProfileSuggestedBinding *), suggestedBindings)
@@ -271,6 +287,9 @@ private:
 	EXT_PROTO_XRRESULT_FUNC2(xrWaitSwapchainImage, (XrSwapchain), swapchain, (const XrSwapchainImageWaitInfo *), waitInfo)
 
 	// instance
+	bool initialize_instance(const String &p_rendering_driver);
+	bool initialize_system();
+	void release_system();
 	bool create_instance();
 	bool get_system_info();
 	bool load_supported_view_configuration_types();
@@ -500,6 +519,15 @@ public:
 	bool initialize(const String &p_rendering_driver);
 	bool initialize_session();
 	void finish();
+
+	bool is_deferred() const { return deferred; }
+	void start_watching(); // Deferred: asks the runtime for a headset every 2 s while there's no session.
+	bool is_headset_available() const { return headset_available.is_set(); }
+	void stop_watching();
+	bool initialize_deferred(); // Deferred: the system and our device on the runtime; the session follows.
+	void end_deferred(); // Deferred: destroys the session and our device; the instance stays unless it was lost.
+	void request_end_session(); // Deferred: asks the runtime to end the session; teardown follows once it has.
+	bool take_teardown_request(); // Deferred: true once, when the session is over and should be torn down.
 
 	_FORCE_INLINE_ XrSpace get_play_space() const { return play_space; }
 	_FORCE_INLINE_ XrSpace get_view_space() const { return view_space; }

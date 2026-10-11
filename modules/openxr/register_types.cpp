@@ -250,7 +250,10 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 			openxr_api = memnew(OpenXRAPI);
 			ERR_FAIL_NULL(openxr_api);
 
-			if (!openxr_api->initialize(OS::get_singleton()->get_current_rendering_driver_name())) {
+			if (openxr_api->is_deferred()) {
+				// The renderer creates its own Vulkan device; OpenXRInterface::initialize() starts a session later.
+				print_line("OpenXR: deferred, waiting for a headset");
+			} else if (!openxr_api->initialize(OS::get_singleton()->get_current_rendering_driver_name())) {
 				const char *init_error_message =
 						"OpenXR was requested but failed to start.\n"
 						"HMD was not detected or a required feature was not supported.\n\n"
@@ -355,6 +358,8 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 
 			if (openxr_interface->initialize_on_startup()) {
 				openxr_interface->initialize();
+			} else if (openxr_api && openxr_api->is_deferred()) {
+				openxr_api->start_watching();
 			}
 		}
 	}
@@ -385,6 +390,10 @@ void uninitialize_openxr_module(ModuleInitializationLevel p_level) {
 		}
 	}
 	extensions_singletons.clear();
+
+	if (openxr_api) {
+		openxr_api->stop_watching(); // Before the interface it reports to goes away.
+	}
 
 	if (openxr_interface.is_valid()) {
 		// uninitialize just in case

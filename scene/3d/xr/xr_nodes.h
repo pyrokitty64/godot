@@ -44,6 +44,7 @@ protected:
 	StringName tracker_name = XR_TRACKER_HEAD;
 	StringName pose_name = SceneStringName(default_);
 	Ref<XRPositionalTracker> tracker;
+	bool xr_projections_set = false; // The server camera holds our XR projections, not Camera3D's.
 
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
