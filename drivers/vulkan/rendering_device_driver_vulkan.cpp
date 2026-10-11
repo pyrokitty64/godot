@@ -592,8 +592,10 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	// can and will fill the validation layers with useless info otherwise if not enabled.
 	_register_requested_device_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME, false);
 #ifdef _WIN32
-	// Shares images with the separate Vulkan device that deferred OpenXR creates through the runtime.
+	// Shares images, and a semaphore saying when they are drawn, with the separate Vulkan device that
+	// deferred OpenXR creates through the runtime.
 	_register_requested_device_extension("VK_KHR_external_memory_win32", false);
+	_register_requested_device_extension("VK_KHR_external_semaphore_win32", false);
 #endif
 
 	if (Engine::get_singleton()->is_generate_spirv_debug_info_enabled()) {

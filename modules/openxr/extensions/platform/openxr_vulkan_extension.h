@@ -112,11 +112,16 @@ private:
 	// Deferred OpenXR: the renderer's own device, and what we need on ours to copy across.
 	VkPhysicalDevice godot_physical_device = nullptr;
 	VkDevice godot_device = nullptr;
-	VkQueue godot_queue = nullptr;
 	VkQueue deferred_queue = nullptr;
 	VkCommandPool deferred_command_pool = VK_NULL_HANDLE;
 	VkCommandBuffer deferred_command_buffer = nullptr;
 	VkFence deferred_fence = VK_NULL_HANDLE;
+	bool copy_pending = false; // deferred_fence will signal when the last copy is done.
+	// The renderer's frame submission signals frame_semaphore (on its device) once the frame is drawn;
+	// copy_semaphore is the same semaphore on ours, which the copy waits on.
+	VkSemaphore frame_semaphore = VK_NULL_HANDLE;
+	VkSemaphore copy_semaphore = VK_NULL_HANDLE;
+	bool frame_semaphore_signaled = false;
 	PFN_vkVoidFunction get_memory_win32_handle = nullptr; // vkGetMemoryWin32HandleKHR on the renderer's device.
 	uint64_t wait_usec = 0; // `--verbose` timing of on_swapchain_release.
 	uint64_t copy_usec = 0;

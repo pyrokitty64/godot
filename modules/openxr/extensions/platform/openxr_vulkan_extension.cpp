@@ -538,8 +538,8 @@ void OpenXRVulkanExtension::cleanup_swapchain_graphics_data(void **p_swapchain_g
 	data->density_map_rids.clear();
 
 	if (!data->deferred_images.is_empty()) {
-		// Both devices may still be using the images.
-		vkQueueWaitIdle(godot_queue);
+		// Every frame that drew into the images has a copy waiting on it, so once our copies are done
+		// both devices are done with them.
 		vkDeviceWaitIdle(vulkan_device);
 		for (DeferredImage &image : data->deferred_images) {
 			free_deferred_image(image);
@@ -572,7 +572,6 @@ bool OpenXRVulkanExtension::create_deferred_graphics() {
 	ERR_FAIL_NULL_V(rendering_device, false);
 	godot_device = (VkDevice)rendering_device->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_LOGICAL_DEVICE);
 	godot_physical_device = (VkPhysicalDevice)rendering_device->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_PHYSICAL_DEVICE);
-	godot_queue = (VkQueue)rendering_device->get_driver_resource(RenderingDevice::DRIVER_RESOURCE_COMMAND_QUEUE);
 
 	get_memory_win32_handle = vkGetDeviceProcAddr(godot_device, "vkGetMemoryWin32HandleKHR");
 	if (get_memory_win32_handle == nullptr) {
@@ -631,12 +630,12 @@ bool OpenXRVulkanExtension::create_deferred_graphics() {
 	queue_info.queueFamilyIndex = vulkan_queue_family_index;
 	queue_info.queueCount = 1;
 	queue_info.pQueuePriorities = &priority;
-	const char *device_extensions[] = { VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME };
+	const char *device_extensions[] = { VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME, VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME };
 	VkDeviceCreateInfo device_info = {};
 	device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 	device_info.queueCreateInfoCount = 1;
 	device_info.pQueueCreateInfos = &queue_info;
-	device_info.enabledExtensionCount = 1;
+	device_info.enabledExtensionCount = 2;
 	device_info.ppEnabledExtensionNames = device_extensions;
 	if (!create_vulkan_device(&device_info, &vulkan_device) || vulkan_device == nullptr) {
 		return false;
@@ -658,6 +657,37 @@ bool OpenXRVulkanExtension::create_deferred_graphics() {
 	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	ERR_FAIL_COND_V(vkCreateFence(vulkan_device, &fence_info, nullptr, &deferred_fence) != VK_SUCCESS, false);
 
+	// The semaphore the renderer's frame signals and our copy waits on, shared like the images.
+	PFN_vkGetSemaphoreWin32HandleKHR get_semaphore_handle = (PFN_vkGetSemaphoreWin32HandleKHR)vkGetDeviceProcAddr(godot_device, "vkGetSemaphoreWin32HandleKHR");
+	PFN_vkImportSemaphoreWin32HandleKHR import_semaphore_handle = (PFN_vkImportSemaphoreWin32HandleKHR)vkGetDeviceProcAddr(vulkan_device, "vkImportSemaphoreWin32HandleKHR");
+	if (get_semaphore_handle == nullptr || import_semaphore_handle == nullptr) {
+		print_line("OpenXR: a Vulkan device lacks VK_KHR_external_semaphore_win32, can't tell the runtime's device when a frame is drawn");
+		return false;
+	}
+	VkExportSemaphoreCreateInfo export_semaphore_info = {};
+	export_semaphore_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+	export_semaphore_info.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+	VkSemaphoreCreateInfo semaphore_info = {};
+	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	semaphore_info.pNext = &export_semaphore_info;
+	ERR_FAIL_COND_V(vkCreateSemaphore(godot_device, &semaphore_info, nullptr, &frame_semaphore) != VK_SUCCESS, false);
+	semaphore_info.pNext = nullptr;
+	ERR_FAIL_COND_V(vkCreateSemaphore(vulkan_device, &semaphore_info, nullptr, &copy_semaphore) != VK_SUCCESS, false);
+	VkSemaphoreGetWin32HandleInfoKHR semaphore_handle_info = {};
+	semaphore_handle_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR;
+	semaphore_handle_info.semaphore = frame_semaphore;
+	semaphore_handle_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+	HANDLE semaphore_handle = nullptr;
+	ERR_FAIL_COND_V(get_semaphore_handle(godot_device, &semaphore_handle_info, &semaphore_handle) != VK_SUCCESS, false);
+	VkImportSemaphoreWin32HandleInfoKHR import_semaphore_info = {};
+	import_semaphore_info.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR;
+	import_semaphore_info.semaphore = copy_semaphore;
+	import_semaphore_info.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+	import_semaphore_info.handle = semaphore_handle;
+	VkResult result = import_semaphore_handle(vulkan_device, &import_semaphore_info);
+	CloseHandle(semaphore_handle); // Importing an opaque Win32 handle doesn't take ownership of it.
+	ERR_FAIL_COND_V_MSG(result != VK_SUCCESS, false, vformat("OpenXR: couldn't import the frame semaphore on the runtime's device (VkResult %d).", result));
+
 	print_line("OpenXR: deferred, frames are copied to the runtime's Vulkan device");
 	return true;
 #else
@@ -668,7 +698,11 @@ bool OpenXRVulkanExtension::create_deferred_graphics() {
 
 void OpenXRVulkanExtension::destroy_deferred_graphics() {
 	if (vulkan_device != nullptr) {
+		// Once our copies are done, so are the renderer's signals they waited on.
 		vkDeviceWaitIdle(vulkan_device);
+		if (copy_semaphore != VK_NULL_HANDLE) {
+			vkDestroySemaphore(vulkan_device, copy_semaphore, nullptr);
+		}
 		if (deferred_fence != VK_NULL_HANDLE) {
 			vkDestroyFence(vulkan_device, deferred_fence, nullptr);
 		}
@@ -680,6 +714,13 @@ void OpenXRVulkanExtension::destroy_deferred_graphics() {
 	if (vulkan_instance != nullptr) {
 		vkDestroyInstance(vulkan_instance, nullptr);
 	}
+	if (frame_semaphore != VK_NULL_HANDLE) {
+		vkDestroySemaphore(godot_device, frame_semaphore, nullptr);
+	}
+	frame_semaphore = VK_NULL_HANDLE;
+	copy_semaphore = VK_NULL_HANDLE;
+	frame_semaphore_signaled = false;
+	copy_pending = false;
 	deferred_fence = VK_NULL_HANDLE;
 	deferred_command_pool = VK_NULL_HANDLE;
 	deferred_command_buffer = nullptr;
@@ -822,6 +863,11 @@ void OpenXRVulkanExtension::on_post_draw_swapchain(void *p_swapchain_graphics_da
 	for (uint32_t layer = 0; layer < data->layers; layer++) {
 		rendering_device->texture_copy(image.render_rid, image.shared_rid, Vector3(), Vector3(), Vector3(data->width, data->height, 1), 0, 0, layer, layer);
 	}
+	if (!frame_semaphore_signaled) {
+		// The frame's submission tells our copy when the image is drawn.
+		rendering_device->frame_signal_semaphore(RDD::SemaphoreID(frame_semaphore));
+		frame_semaphore_signaled = true;
+	}
 }
 
 void OpenXRVulkanExtension::on_swapchain_release(void *p_swapchain_graphics_data, int p_image_index) {
@@ -832,10 +878,15 @@ void OpenXRVulkanExtension::on_swapchain_release(void *p_swapchain_graphics_data
 	ERR_FAIL_UNSIGNED_INDEX((uint32_t)p_image_index, data->deferred_images.size());
 	const DeferredImage &image = data->deferred_images[p_image_index];
 
-	// The renderer has submitted this frame (XRServer::end_frame); wait for it on the CPU.
-	// TODO: a shared semaphore instead, so the renderer and our copy can overlap.
+	// The renderer has submitted this frame (XRServer::end_frame), signalling frame_semaphore once it
+	// is drawn; our copy waits for that on the GPU. Our command buffer is reused, so the previous copy
+	// must be done (it normally is, a frame later).
 	const uint64_t wait_start = OS::get_singleton()->get_ticks_usec();
-	vkQueueWaitIdle(godot_queue);
+	if (copy_pending) {
+		vkWaitForFences(vulkan_device, 1, &deferred_fence, VK_TRUE, UINT64_MAX);
+		vkResetFences(vulkan_device, 1, &deferred_fence);
+		copy_pending = false;
+	}
 	const uint64_t copy_start = OS::get_singleton()->get_ticks_usec();
 
 	VkCommandBufferBeginInfo begin_info = {};
@@ -892,13 +943,17 @@ void OpenXRVulkanExtension::on_swapchain_release(void *p_swapchain_graphics_data
 
 	vkEndCommandBuffer(deferred_command_buffer);
 
+	const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 	VkSubmitInfo submit_info = {};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.waitSemaphoreCount = frame_semaphore_signaled ? 1 : 0;
+	submit_info.pWaitSemaphores = &copy_semaphore;
+	submit_info.pWaitDstStageMask = &wait_stage;
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &deferred_command_buffer;
 	vkQueueSubmit(deferred_queue, 1, &submit_info, deferred_fence);
-	vkWaitForFences(vulkan_device, 1, &deferred_fence, VK_TRUE, UINT64_MAX);
-	vkResetFences(vulkan_device, 1, &deferred_fence);
+	frame_semaphore_signaled = false;
+	copy_pending = true;
 
 	// `--verbose`: what the CPU wait and the copy cost, averaged over about 5 s.
 	if (OS::get_singleton()->is_stdout_verbose()) {
@@ -906,7 +961,7 @@ void OpenXRVulkanExtension::on_swapchain_release(void *p_swapchain_graphics_data
 		wait_usec += copy_start - wait_start;
 		copy_usec += end - copy_start;
 		if (++timed_frames == 450) {
-			print_line(vformat("OpenXR: deferred, per frame: waiting for the renderer %.2f ms, copying to the runtime %.2f ms", wait_usec / 450000.0, copy_usec / 450000.0));
+			print_line(vformat("OpenXR: deferred, per frame: waiting for the previous copy %.2f ms, recording and submitting the copy %.2f ms", wait_usec / 450000.0, copy_usec / 450000.0));
 			wait_usec = 0;
 			copy_usec = 0;
 			timed_frames = 0;

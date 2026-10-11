@@ -1031,6 +1031,9 @@ private:
 public:
 	RenderingDeviceDriver *get_device_driver() const { return driver; }
 	RenderingContextDriver *get_context_driver() const { return context; }
+	// Has the current frame's submission also signal p_semaphore, a driver semaphore another device
+	// waits on to read what the frame renders (deferred OpenXR).
+	void frame_signal_semaphore(RDD::SemaphoreID p_semaphore);
 
 	const RDD::Capabilities &get_device_capabilities() const { return driver->get_capabilities(); }
 
@@ -1836,6 +1839,9 @@ private:
 
 		// Semaphores the frame must wait on before executing the command buffer.
 		LocalVector<RDD::SemaphoreID> semaphores_to_wait_on;
+
+		// Semaphores the frame's last command buffer signals besides its own (frame_signal_semaphore).
+		LocalVector<RDD::SemaphoreID> semaphores_to_signal;
 
 		// Swap chains prepared for drawing during the frame that must be presented.
 		LocalVector<RDD::SwapChainID> swap_chains_to_present;

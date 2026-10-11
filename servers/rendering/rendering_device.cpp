@@ -8132,6 +8132,11 @@ void RenderingDevice::swap_buffers(bool p_present) {
 	_begin_frame(true);
 }
 
+void RenderingDevice::frame_signal_semaphore(RDD::SemaphoreID p_semaphore) {
+	ERR_RENDER_THREAD_GUARD();
+	frames[frame].semaphores_to_signal.push_back(p_semaphore);
+}
+
 void RenderingDevice::submit() {
 	ERR_RENDER_THREAD_GUARD();
 	ERR_FAIL_COND_MSG(is_main_instance, "Only local devices can submit and sync.");
@@ -8425,9 +8430,18 @@ void RenderingDevice::execute_chained_cmds(bool p_present_swap_chain, RenderingD
 			// Semaphores always need to be signaled if it's not the last command buffer.
 		}
 
-		driver->command_queue_execute_and_present(main_queue, wait_semaphores, command_buffer,
-				signal_semaphore ? signal_semaphore : VectorView<RDD::SemaphoreID>(), signal_fence,
-				swap_chains);
+		thread_local LocalVector<RDD::SemaphoreID> signal_semaphores;
+		signal_semaphores.clear();
+		if (signal_semaphore) {
+			signal_semaphores.push_back(signal_semaphore);
+		}
+		if (i == (command_buffer_count - 1)) {
+			for (RDD::SemaphoreID semaphore : frames[frame].semaphores_to_signal) {
+				signal_semaphores.push_back(semaphore);
+			}
+		}
+
+		driver->command_queue_execute_and_present(main_queue, wait_semaphores, command_buffer, signal_semaphores, signal_fence, swap_chains);
 
 		// Make the next command buffer wait on the semaphore signaled by this one.
 		wait_semaphores.resize(1);
@@ -8435,6 +8449,7 @@ void RenderingDevice::execute_chained_cmds(bool p_present_swap_chain, RenderingD
 	}
 
 	frames[frame].semaphores_to_wait_on.clear();
+	frames[frame].semaphores_to_signal.clear();
 }
 
 void RenderingDevice::_execute_frame(bool p_present) {
