@@ -289,13 +289,14 @@ public:
 	}
 
 	virtual RID shader_create_from_code(const String &p_code, const String &p_path_hint = String()) override {
-		RID shader = RSG::material_storage->shader_allocate();
 		bool using_server_thread = Thread::get_caller_id() == server_thread;
-		if (using_server_thread || RSG::rasterizer->can_create_resources_async()) {
-			if (using_server_thread) {
-				command_queue.flush_if_pending();
-			}
+		if (using_server_thread) {
+			// Flush before allocating: a queued command looking up a freed shader would otherwise land on the uninitialized slot.
+			command_queue.flush_if_pending();
+		}
 
+		RID shader = RSG::material_storage->shader_allocate();
+		if (using_server_thread || RSG::rasterizer->can_create_resources_async()) {
 			RSG::material_storage->shader_initialize(shader, false);
 			RSG::material_storage->shader_set_path_hint(shader, p_path_hint);
 			RSG::material_storage->shader_set_code(shader, p_code);
@@ -325,13 +326,14 @@ public:
 	FUNCRIDSPLIT(material)
 
 	virtual RID material_create_from_shader(RID p_next_pass, int p_render_priority, RID p_shader) override {
-		RID material = RSG::material_storage->material_allocate();
 		bool using_server_thread = Thread::get_caller_id() == server_thread;
-		if (using_server_thread || RSG::rasterizer->can_create_resources_async()) {
-			if (using_server_thread) {
-				command_queue.flush_if_pending();
-			}
+		if (using_server_thread) {
+			// Flush before allocating, as in shader_create_from_code().
+			command_queue.flush_if_pending();
+		}
 
+		RID material = RSG::material_storage->material_allocate();
+		if (using_server_thread || RSG::rasterizer->can_create_resources_async()) {
 			RSG::material_storage->material_initialize(material);
 			RSG::material_storage->material_set_next_pass(material, p_next_pass);
 			RSG::material_storage->material_set_render_priority(material, p_render_priority);
@@ -364,13 +366,14 @@ public:
 #define server_name RSG::mesh_storage
 
 	virtual RID mesh_create_from_surfaces(const Vector<RenderingServerTypes::SurfaceData> &p_surfaces, int p_blend_shape_count = 0) override {
-		RID mesh = RSG::mesh_storage->mesh_allocate();
-
 		bool using_server_thread = Thread::get_caller_id() == server_thread;
+		if (using_server_thread) {
+			// Flush before allocating, as in shader_create_from_code().
+			command_queue.flush_if_pending();
+		}
+
+		RID mesh = RSG::mesh_storage->mesh_allocate();
 		if (using_server_thread || RSG::rasterizer->can_create_resources_async()) {
-			if (using_server_thread) {
-				command_queue.flush_if_pending();
-			}
 			RSG::mesh_storage->mesh_initialize(mesh);
 			RSG::mesh_storage->mesh_set_blend_shape_count(mesh, p_blend_shape_count);
 			for (int i = 0; i < p_surfaces.size(); i++) {
