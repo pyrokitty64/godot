@@ -185,6 +185,7 @@ private:
 	mutable bool rest_dirty = false;
 
 	bool show_rest_only = false;
+	bool dual_quaternion_skinning = false;
 	float motion_scale = 1.0;
 
 	uint64_t version = 1;
@@ -266,6 +267,9 @@ public:
 
 	void set_show_rest_only(bool p_enabled);
 	bool is_show_rest_only() const;
+
+	void set_dual_quaternion_skinning(bool p_enabled);
+	bool is_dual_quaternion_skinning() const;
 	void clear_bones();
 
 	void set_motion_scale(float p_motion_scale);

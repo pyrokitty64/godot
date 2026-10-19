@@ -481,6 +481,7 @@ public:
 	FUNC3(skeleton_bone_set_transform_2d, RID, int, const Transform2D &)
 	FUNC2RC(Transform2D, skeleton_bone_get_transform_2d, RID, int)
 	FUNC2(skeleton_set_base_transform_2d, RID, const Transform2D &)
+	FUNC2(skeleton_set_dual_quaternion, RID, bool)
 
 	/* Light API */
 #undef ServerName
@@ -957,6 +958,7 @@ public:
 	FUNC2(instance_set_transform, RID, const Transform3D &)
 	FUNC2(instance_attach_object_instance_id, RID, ObjectID)
 	FUNC3(instance_set_blend_shape_weight, RID, int, float)
+	FUNC2R(PackedVector3Array, instance_debug_get_skinned_vertices, RID, int)
 	FUNC3(instance_set_surface_override_material, RID, int, RID)
 	FUNC2(instance_set_visible, RID, bool)
 

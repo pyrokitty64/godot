@@ -1043,6 +1043,13 @@ void RendererSceneCull::instance_attach_object_instance_id(RID p_instance, Objec
 	instance->object_id = p_id;
 }
 
+PackedVector3Array RendererSceneCull::instance_debug_get_skinned_vertices(RID p_instance, int p_surface) {
+	Instance *instance = instance_owner.get_or_null(p_instance);
+	ERR_FAIL_NULL_V(instance, PackedVector3Array());
+	ERR_FAIL_COND_V_MSG(instance->mesh_instance.is_null(), PackedVector3Array(), "This instance isn't skinned or blended.");
+	return RSG::mesh_storage->mesh_instance_debug_get_skinned_vertices(instance->mesh_instance, p_surface);
+}
+
 void RendererSceneCull::instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight) {
 	Instance *instance = instance_owner.get_or_null(p_instance);
 	ERR_FAIL_NULL(instance);

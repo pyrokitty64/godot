@@ -177,6 +177,7 @@ public:
 
 	virtual void mesh_instance_set_skeleton(RID p_mesh_instance, RID p_skeleton) override {}
 	virtual void mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int p_shape, float p_weight) override {}
+	virtual PackedVector3Array mesh_instance_debug_get_skinned_vertices(RID p_mesh_instance, int p_surface) override { return PackedVector3Array(); }
 	virtual void mesh_instance_check_for_update(RID p_mesh_instance) override {}
 	virtual void mesh_instance_set_canvas_item_transform(RID p_mesh_instance, const Transform2D &p_transform) override {}
 	virtual void update_mesh_instances() override {}
@@ -225,6 +226,7 @@ public:
 	virtual void skeleton_free(RID p_rid) override {}
 	virtual void skeleton_allocate_data(RID p_skeleton, int p_bones, bool p_2d_skeleton = false) override {}
 	virtual void skeleton_set_base_transform_2d(RID p_skeleton, const Transform2D &p_base_transform) override {}
+	virtual void skeleton_set_dual_quaternion(RID p_skeleton, bool p_enabled) override {}
 	virtual int skeleton_get_bone_count(RID p_skeleton) const override { return 0; }
 	virtual void skeleton_bone_set_transform(RID p_skeleton, int p_bone, const Transform3D &p_transform) override {}
 	virtual Transform3D skeleton_bone_get_transform(RID p_skeleton, int p_bone) const override { return Transform3D(); }

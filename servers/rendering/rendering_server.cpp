@@ -2522,6 +2522,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("skeleton_bone_set_transform_2d", "skeleton", "bone", "transform"), &RenderingServer::skeleton_bone_set_transform_2d);
 	ClassDB::bind_method(D_METHOD("skeleton_bone_get_transform_2d", "skeleton", "bone"), &RenderingServer::skeleton_bone_get_transform_2d);
 	ClassDB::bind_method(D_METHOD("skeleton_set_base_transform_2d", "skeleton", "base_transform"), &RenderingServer::skeleton_set_base_transform_2d);
+	ClassDB::bind_method(D_METHOD("skeleton_set_dual_quaternion", "skeleton", "enabled"), &RenderingServer::skeleton_set_dual_quaternion);
 
 	/* Light API */
 
@@ -3234,6 +3235,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instance_set_transform", "instance", "transform"), &RenderingServer::instance_set_transform);
 	ClassDB::bind_method(D_METHOD("instance_attach_object_instance_id", "instance", "id"), &RenderingServer::instance_attach_object_instance_id);
 	ClassDB::bind_method(D_METHOD("instance_set_blend_shape_weight", "instance", "shape", "weight"), &RenderingServer::instance_set_blend_shape_weight);
+	ClassDB::bind_method(D_METHOD("instance_debug_get_skinned_vertices", "instance", "surface"), &RenderingServer::instance_debug_get_skinned_vertices);
 	ClassDB::bind_method(D_METHOD("instance_set_surface_override_material", "instance", "surface", "material"), &RenderingServer::instance_set_surface_override_material);
 	ClassDB::bind_method(D_METHOD("instance_set_visible", "instance", "visible"), &RenderingServer::instance_set_visible);
 	ClassDB::bind_method(D_METHOD("instance_geometry_set_transparency", "instance", "transparency"), &RenderingServer::instance_geometry_set_transparency);

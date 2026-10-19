@@ -96,6 +96,7 @@ public:
 	virtual void mesh_instance_free(RID p_rid) = 0;
 	virtual void mesh_instance_set_skeleton(RID p_mesh_instance, RID p_skeleton) = 0;
 	virtual void mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int p_shape, float p_weight) = 0;
+	virtual PackedVector3Array mesh_instance_debug_get_skinned_vertices(RID p_mesh_instance, int p_surface) = 0; // Positions after skinning, read back from the GPU.
 	virtual void mesh_instance_check_for_update(RID p_mesh_instance) = 0;
 	virtual void mesh_instance_set_canvas_item_transform(RID p_mesh_instance, const Transform2D &p_transform) = 0;
 	virtual void update_mesh_instances() = 0;
@@ -223,6 +224,7 @@ public:
 	virtual void skeleton_bone_set_transform_2d(RID p_skeleton, int p_bone, const Transform2D &p_transform) = 0;
 	virtual Transform2D skeleton_bone_get_transform_2d(RID p_skeleton, int p_bone) const = 0;
 	virtual void skeleton_set_base_transform_2d(RID p_skeleton, const Transform2D &p_base_transform) = 0;
+	virtual void skeleton_set_dual_quaternion(RID p_skeleton, bool p_enabled) = 0; // Blend bones as dual quaternions, not matrices.
 
 	virtual void skeleton_update_dependency(RID p_base, DependencyTracker *p_instance) = 0;
 

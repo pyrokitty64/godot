@@ -867,6 +867,17 @@ bool Skeleton3D::is_show_rest_only() const {
 	return show_rest_only;
 }
 
+void Skeleton3D::set_dual_quaternion_skinning(bool p_enabled) {
+	dual_quaternion_skinning = p_enabled;
+	for (SkinReference *E : skin_bindings) {
+		RenderingServer::get_singleton()->skeleton_set_dual_quaternion(E->skeleton, p_enabled);
+	}
+}
+
+bool Skeleton3D::is_dual_quaternion_skinning() const {
+	return dual_quaternion_skinning;
+}
+
 void Skeleton3D::clear_bones() {
 	bones.clear();
 	name_to_bone_index.clear();
@@ -1101,6 +1112,7 @@ Ref<SkinReference> Skeleton3D::register_skin(const Ref<Skin> &p_skin) {
 	skin_ref->skeleton_node = this;
 	skin_ref->bind_count = 0;
 	skin_ref->skeleton = RenderingServer::get_singleton()->skeleton_create();
+	RenderingServer::get_singleton()->skeleton_set_dual_quaternion(skin_ref->skeleton, dual_quaternion_skinning);
 	skin_ref->skeleton_node = this;
 	skin_ref->skin = p_skin;
 
@@ -1360,6 +1372,8 @@ void Skeleton3D::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_show_rest_only", "enabled"), &Skeleton3D::set_show_rest_only);
 	ClassDB::bind_method(D_METHOD("is_show_rest_only"), &Skeleton3D::is_show_rest_only);
+	ClassDB::bind_method(D_METHOD("set_dual_quaternion_skinning", "enabled"), &Skeleton3D::set_dual_quaternion_skinning);
+	ClassDB::bind_method(D_METHOD("is_dual_quaternion_skinning"), &Skeleton3D::is_dual_quaternion_skinning);
 
 	ClassDB::bind_method(D_METHOD("set_modifier_callback_mode_process", "mode"), &Skeleton3D::set_modifier_callback_mode_process);
 	ClassDB::bind_method(D_METHOD("get_modifier_callback_mode_process"), &Skeleton3D::get_modifier_callback_mode_process);
@@ -1368,6 +1382,7 @@ void Skeleton3D::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "motion_scale", PROPERTY_HINT_RANGE, "0.001,10,0.001,or_greater"), "set_motion_scale", "get_motion_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "show_rest_only"), "set_show_rest_only", "is_show_rest_only");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dual_quaternion_skinning"), "set_dual_quaternion_skinning", "is_dual_quaternion_skinning");
 
 	ADD_GROUP("Modifier", "modifier_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "modifier_callback_mode_process", PROPERTY_HINT_ENUM, "Physics,Idle,Manual"), "set_modifier_callback_mode_process", "get_modifier_callback_mode_process");

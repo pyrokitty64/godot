@@ -50,7 +50,7 @@ layout(push_constant, std430) uniform Params {
 	uint blend_shape_count;
 	bool normalized_blend_shapes;
 	uint normal_tangent_stride;
-	uint pad1;
+	bool dual_quaternion;
 
 	vec2 skeleton_transform_x;
 	vec2 skeleton_transform_y;
@@ -119,6 +119,37 @@ uint encode_tang_to_uint_oct(vec4 base) {
 
 	return vec2_to_uint(oct);
 }
+
+#ifndef MODE_2D
+// A bone's transform: 3 rows of [rotation | translation].
+mat4 bone_matrix(uint bone) {
+	return mat4(bone_transforms.data[bone], bone_transforms.data[bone + 1], bone_transforms.data[bone + 2], vec4(0.0, 0.0, 0.0, 1.0));
+}
+
+// A rotation matrix's quaternion (x, y, z, w), from its rows.
+vec4 quat_from_rows(vec3 r0, vec3 r1, vec3 r2) {
+	float trace = r0.x + r1.y + r2.z;
+	vec4 q;
+	if (trace > 0.0) {
+		float s = 0.5 / sqrt(trace + 1.0);
+		q = vec4((r2.y - r1.z) * s, (r0.z - r2.x) * s, (r1.x - r0.y) * s, 0.25 / s);
+	} else if (r0.x > r1.y && r0.x > r2.z) {
+		float s = 2.0 * sqrt(1.0 + r0.x - r1.y - r2.z);
+		q = vec4(0.25 * s, (r0.y + r1.x) / s, (r0.z + r2.x) / s, (r2.y - r1.z) / s);
+	} else if (r1.y > r2.z) {
+		float s = 2.0 * sqrt(1.0 + r1.y - r0.x - r2.z);
+		q = vec4((r0.y + r1.x) / s, 0.25 * s, (r1.z + r2.y) / s, (r0.z - r2.x) / s);
+	} else {
+		float s = 2.0 * sqrt(1.0 + r2.z - r0.x - r1.y);
+		q = vec4((r0.z + r2.x) / s, (r1.z + r2.y) / s, 0.25 * s, (r1.x - r0.y) / s);
+	}
+	return normalize(q);
+}
+
+vec4 quat_mul(vec4 a, vec4 b) {
+	return vec4(a.w * b.xyz + b.w * a.xyz + cross(a.xyz, b.xyz), a.w * b.w - dot(a.xyz, b.xyz));
+}
+#endif
 
 void main() {
 	uint index = gl_GlobalInvocationID.x;
@@ -217,27 +248,27 @@ void main() {
 			if (abs(w) > 0.0001) {
 				uint base_offset = params.vertex_count * i * (params.vertex_stride + params.normal_tangent_stride) + index * params.vertex_stride;
 
-				blend_vertex += uintBitsToFloat(uvec3(src_blend_shapes.data[base_offset + 0], src_blend_shapes.data[base_offset + 1], src_blend_shapes.data[base_offset + 2])) * w;
+				// Normalized shapes are stored whole: (1 - sum w) base + sum w shape. Summed as
+				// base + sum w (shape - base), the same thing without float32 cancelling numbers the
+				// size of sum w times the mesh's extent (60 keys on a body: 0.02 mm at head height).
+				vec3 shape_vertex = uintBitsToFloat(uvec3(src_blend_shapes.data[base_offset + 0], src_blend_shapes.data[base_offset + 1], src_blend_shapes.data[base_offset + 2]));
+				blend_vertex += (params.normalized_blend_shapes ? shape_vertex - vertex : shape_vertex) * w;
 
 				uint base_normal = params.vertex_count * i * (params.vertex_stride + params.normal_tangent_stride) + params.vertex_count * params.vertex_stride + index * params.normal_tangent_stride;
 
 				if (params.has_normal) {
-					blend_normal += decode_uint_oct_to_norm(src_blend_shapes.data[base_normal]) * w;
+					vec3 shape_normal = decode_uint_oct_to_norm(src_blend_shapes.data[base_normal]);
+					blend_normal += (params.normalized_blend_shapes ? shape_normal - normal : shape_normal) * w;
 					base_normal++;
 				}
 
 				if (params.has_tangent) {
-					blend_tangent += decode_uint_oct_to_tang(src_blend_shapes.data[base_normal]).rgb * w;
+					vec3 shape_tangent = decode_uint_oct_to_tang(src_blend_shapes.data[base_normal]).rgb;
+					blend_tangent += (params.normalized_blend_shapes ? shape_tangent - tangent.rgb : shape_tangent) * w;
 				}
 
 				blend_total += w;
 			}
-		}
-
-		if (params.normalized_blend_shapes) {
-			vertex = (1.0 - blend_total) * vertex;
-			normal = (1.0 - blend_total) * normal;
-			tangent.rgb = (1.0 - blend_total) * tangent.rgb;
 		}
 
 		vertex += blend_vertex;
@@ -246,49 +277,78 @@ void main() {
 	}
 
 	if (params.has_skeleton) {
-		uint skin_offset = params.skin_stride * index;
-
-		uvec2 bones = uvec2(src_bone_weights.data[skin_offset + 0], src_bone_weights.data[skin_offset + 1]);
-		uvec2 bones_01 = uvec2(bones.x & 0xFFFF, bones.x >> 16) * 3; //pre-add xform offset
-		uvec2 bones_23 = uvec2(bones.y & 0xFFFF, bones.y >> 16) * 3;
-
-		skin_offset += params.skin_weight_offset;
-
-		uvec2 weights = uvec2(src_bone_weights.data[skin_offset + 0], src_bone_weights.data[skin_offset + 1]);
-
-		vec2 weights_01 = unpackUnorm2x16(weights.x);
-		vec2 weights_23 = unpackUnorm2x16(weights.y);
-
-		mat4 m = mat4(bone_transforms.data[bones_01.x], bone_transforms.data[bones_01.x + 1], bone_transforms.data[bones_01.x + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_01.x;
-		m += mat4(bone_transforms.data[bones_01.y], bone_transforms.data[bones_01.y + 1], bone_transforms.data[bones_01.y + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_01.y;
-		m += mat4(bone_transforms.data[bones_23.x], bone_transforms.data[bones_23.x + 1], bone_transforms.data[bones_23.x + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_23.x;
-		m += mat4(bone_transforms.data[bones_23.y], bone_transforms.data[bones_23.y + 1], bone_transforms.data[bones_23.y + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_23.y;
-
-		if (params.skin_weight_offset == 4) {
-			//using 8 bones/weights
-			skin_offset = params.skin_stride * index + 2;
-
-			bones = uvec2(src_bone_weights.data[skin_offset + 0], src_bone_weights.data[skin_offset + 1]);
-			bones_01 = uvec2(bones.x & 0xFFFF, bones.x >> 16) * 3; //pre-add xform offset
-			bones_23 = uvec2(bones.y & 0xFFFF, bones.y >> 16) * 3;
-
-			skin_offset += params.skin_weight_offset;
-
-			weights = uvec2(src_bone_weights.data[skin_offset + 0], src_bone_weights.data[skin_offset + 1]);
-
-			weights_01 = unpackUnorm2x16(weights.x);
-			weights_23 = unpackUnorm2x16(weights.y);
-
-			m += mat4(bone_transforms.data[bones_01.x], bone_transforms.data[bones_01.x + 1], bone_transforms.data[bones_01.x + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_01.x;
-			m += mat4(bone_transforms.data[bones_01.y], bone_transforms.data[bones_01.y + 1], bone_transforms.data[bones_01.y + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_01.y;
-			m += mat4(bone_transforms.data[bones_23.x], bone_transforms.data[bones_23.x + 1], bone_transforms.data[bones_23.x + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_23.x;
-			m += mat4(bone_transforms.data[bones_23.y], bone_transforms.data[bones_23.y + 1], bone_transforms.data[bones_23.y + 2], vec4(0.0, 0.0, 0.0, 1.0)) * weights_23.y;
+		// The vertex's bones (offsets into bone_transforms) and weights: 4, or 8.
+		uint bone_ids[8];
+		float bone_weights[8];
+		uint count = params.skin_weight_offset == 4 ? 8 : 4;
+		for (uint set = 0; set < count / 4; set++) {
+			uint skin_offset = params.skin_stride * index + set * 2;
+			uvec2 bones = uvec2(src_bone_weights.data[skin_offset + 0], src_bone_weights.data[skin_offset + 1]);
+			uvec2 weights = uvec2(src_bone_weights.data[skin_offset + params.skin_weight_offset + 0], src_bone_weights.data[skin_offset + params.skin_weight_offset + 1]);
+			bone_ids[set * 4 + 0] = (bones.x & 0xFFFF) * 3; //pre-add xform offset
+			bone_ids[set * 4 + 1] = (bones.x >> 16) * 3;
+			bone_ids[set * 4 + 2] = (bones.y & 0xFFFF) * 3;
+			bone_ids[set * 4 + 3] = (bones.y >> 16) * 3;
+			vec2 weights_01 = unpackUnorm2x16(weights.x);
+			vec2 weights_23 = unpackUnorm2x16(weights.y);
+			bone_weights[set * 4 + 0] = weights_01.x;
+			bone_weights[set * 4 + 1] = weights_01.y;
+			bone_weights[set * 4 + 2] = weights_23.x;
+			bone_weights[set * 4 + 3] = weights_23.y;
 		}
 
-		//reverse order because its transposed
-		vertex = (vec4(vertex, 1.0) * m).xyz;
-		normal = normalize((vec4(normal, 0.0) * m).xyz);
-		tangent.xyz = normalize((vec4(tangent.xyz, 0.0) * m).xyz);
+		// Dual quaternions (Kavan et al.), as DAZ skins Genesis figures: each bone's rigid move
+		// blended as a dual quaternion, in the same hemisphere as the vertex's heaviest bone.
+		// Each bone's move is where it alone puts the vertex, less its turn: a rigid bone's translation,
+		// and for a scaled one (BreastInertia's squash) its scale lands there too, so a vertex is
+		// exact on one bone and the blend stays continuous as a scale comes and goes.
+		if (params.dual_quaternion) {
+			vec4 real = vec4(0.0);
+			vec4 dual = vec4(0.0);
+			uint lead = 0;
+			for (uint i = 1; i < count; i++) {
+				if (bone_weights[i] > bone_weights[lead]) {
+					lead = i;
+				}
+			}
+			vec4 lead_real = vec4(0.0);
+			for (uint k = 0; k < count; k++) {
+				uint i = k == 0 ? lead : (k == lead ? 0 : k); // the heaviest first: it sets the hemisphere
+				if (bone_weights[i] == 0.0) {
+					continue;
+				}
+				vec4 r0 = bone_transforms.data[bone_ids[i]];
+				vec4 r1 = bone_transforms.data[bone_ids[i] + 1];
+				vec4 r2 = bone_transforms.data[bone_ids[i] + 2];
+				vec4 q = quat_from_rows(r0.xyz, r1.xyz, r2.xyz);
+				if (k == 0) {
+					lead_real = q;
+				}
+				float w = dot(q, lead_real) < 0.0 ? -bone_weights[i] : bone_weights[i];
+				vec3 moved = vec3(dot(r0.xyz, vertex), dot(r1.xyz, vertex), dot(r2.xyz, vertex)) + vec3(r0.w, r1.w, r2.w);
+				vec3 turned = vertex + 2.0 * cross(q.xyz, cross(q.xyz, vertex) + q.w * vertex);
+				real += q * w;
+				dual += quat_mul(vec4(moved - turned, 0.0), q) * (0.5 * w);
+			}
+			float norm = length(real);
+			real /= norm;
+			dual /= norm;
+			vec3 translation = 2.0 * (real.w * dual.xyz - dual.w * real.xyz + cross(real.xyz, dual.xyz));
+			vertex += 2.0 * cross(real.xyz, cross(real.xyz, vertex) + real.w * vertex);
+			vertex += translation;
+			normal = normalize(normal + 2.0 * cross(real.xyz, cross(real.xyz, normal) + real.w * normal));
+			tangent.xyz = normalize(tangent.xyz + 2.0 * cross(real.xyz, cross(real.xyz, tangent.xyz) + real.w * tangent.xyz));
+		} else {
+			mat4 m = mat4(0.0);
+			for (uint i = 0; i < count; i++) {
+				m += bone_matrix(bone_ids[i]) * bone_weights[i];
+			}
+
+			//reverse order because its transposed
+			vertex = (vec4(vertex, 1.0) * m).xyz;
+			normal = normalize((vec4(normal, 0.0) * m).xyz);
+			tangent.xyz = normalize((vec4(tangent.xyz, 0.0) * m).xyz);
+		}
 	}
 
 	uint dst_offset = index * params.vertex_stride;

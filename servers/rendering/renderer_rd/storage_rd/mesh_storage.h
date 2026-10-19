@@ -294,7 +294,7 @@ private:
 			uint32_t blend_shape_count;
 			uint32_t normalized_blend_shapes;
 			uint32_t normal_tangent_stride;
-			uint32_t pad1;
+			uint32_t dual_quaternion;
 			float skeleton_transform_x[2];
 			float skeleton_transform_y[2];
 
@@ -326,6 +326,7 @@ private:
 
 	struct Skeleton {
 		bool use_2d = false;
+		bool dual_quaternion = false;
 		int size = 0;
 		LocalVector<float> data;
 		RID buffer;
@@ -651,6 +652,7 @@ public:
 	virtual void mesh_instance_free(RID p_rid) override;
 	virtual void mesh_instance_set_skeleton(RID p_mesh_instance, RID p_skeleton) override;
 	virtual void mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int p_shape, float p_weight) override;
+	virtual PackedVector3Array mesh_instance_debug_get_skinned_vertices(RID p_mesh_instance, int p_surface) override;
 	virtual void mesh_instance_check_for_update(RID p_mesh_instance) override;
 	virtual void mesh_instance_set_canvas_item_transform(RID p_mesh_instance, const Transform2D &p_transform) override;
 	virtual void update_mesh_instances() override;
@@ -786,6 +788,7 @@ public:
 
 	virtual void skeleton_allocate_data(RID p_skeleton, int p_bones, bool p_2d_skeleton = false) override;
 	virtual void skeleton_set_base_transform_2d(RID p_skeleton, const Transform2D &p_base_transform) override;
+	virtual void skeleton_set_dual_quaternion(RID p_skeleton, bool p_enabled) override;
 	virtual int skeleton_get_bone_count(RID p_skeleton) const override;
 	virtual void skeleton_bone_set_transform(RID p_skeleton, int p_bone, const Transform3D &p_transform) override;
 	virtual Transform3D skeleton_bone_get_transform(RID p_skeleton, int p_bone) const override;

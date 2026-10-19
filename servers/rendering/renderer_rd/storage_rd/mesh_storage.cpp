@@ -1064,6 +1064,28 @@ void MeshStorage::mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int 
 	//will be eventually updated
 }
 
+PackedVector3Array MeshStorage::mesh_instance_debug_get_skinned_vertices(RID p_mesh_instance, int p_surface) {
+	MeshInstance *mi = mesh_instance_owner.get_or_null(p_mesh_instance);
+	ERR_FAIL_NULL_V(mi, PackedVector3Array());
+	ERR_FAIL_INDEX_V(p_surface, (int)mi->surfaces.size(), PackedVector3Array());
+	const MeshInstance::Surface &mis = mi->surfaces[p_surface];
+	RID buffer = mis.vertex_buffer[mis.current_buffer];
+	ERR_FAIL_COND_V_MSG(buffer.is_null(), PackedVector3Array(), "This surface isn't skinned or blended on the GPU.");
+	const Mesh::Surface *s = mi->mesh->surfaces[p_surface];
+	ERR_FAIL_COND_V(s->format & RSE::ARRAY_FLAG_USE_2D_VERTICES, PackedVector3Array());
+	// Positions come first, one vertex per stride (as the skeleton shader writes them), then normals and tangents.
+	uint32_t normal_tangent_stride = ((s->format & RSE::ARRAY_FORMAT_NORMAL) ? 1 : 0) + ((s->format & RSE::ARRAY_FORMAT_TANGENT) ? 1 : 0);
+	uint32_t stride = (s->vertex_buffer_size / s->vertex_count) / 4 - normal_tangent_stride;
+	Vector<uint8_t> data = RD::get_singleton()->buffer_get_data(buffer, 0, s->vertex_count * stride * 4);
+	const float *f = reinterpret_cast<const float *>(data.ptr());
+	PackedVector3Array out;
+	out.resize(s->vertex_count);
+	for (uint32_t i = 0; i < s->vertex_count; i++) {
+		out.write[i] = Vector3(f[i * stride + 0], f[i * stride + 1], f[i * stride + 2]);
+	}
+	return out;
+}
+
 void MeshStorage::_mesh_instance_clear(MeshInstance *mi) {
 	while (mi->surfaces.size()) {
 		_mesh_instance_remove_surface(mi, mi->surfaces.size() - 1);
@@ -1275,7 +1297,7 @@ void MeshStorage::update_mesh_instances() {
 
 			push_constant.blend_shape_count = mi->mesh->blend_shape_count;
 			push_constant.normalized_blend_shapes = mi->mesh->blend_shape_mode == RSE::BLEND_SHAPE_MODE_NORMALIZED;
-			push_constant.pad1 = 0;
+			push_constant.dual_quaternion = sk != nullptr && sk->dual_quaternion;
 
 			RD::get_singleton()->compute_list_set_push_constant(compute_list, &push_constant, sizeof(SkeletonShader::PushConstant));
 
@@ -2517,6 +2539,15 @@ void MeshStorage::skeleton_set_base_transform_2d(RID p_skeleton, const Transform
 	ERR_FAIL_COND(!skeleton->use_2d);
 
 	skeleton->base_transform_2d = p_base_transform;
+}
+
+void MeshStorage::skeleton_set_dual_quaternion(RID p_skeleton, bool p_enabled) {
+	Skeleton *skeleton = skeleton_owner.get_or_null(p_skeleton);
+	ERR_FAIL_NULL(skeleton);
+	if (skeleton->dual_quaternion != p_enabled) {
+		skeleton->dual_quaternion = p_enabled;
+		_skeleton_make_dirty(skeleton); // Its mesh instances skin again.
+	}
 }
 
 void MeshStorage::_update_dirty_skeletons() {
