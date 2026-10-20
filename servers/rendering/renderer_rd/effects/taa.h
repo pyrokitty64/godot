@@ -50,6 +50,8 @@ private:
 		float resolution_height;
 		float disocclusion_threshold;
 		float variance_dynamic;
+		float flicker_reduction;
+		float pad[3];
 	};
 
 	TaaResolveShaderRD taa_shader;

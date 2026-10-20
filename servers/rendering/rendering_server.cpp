@@ -3775,6 +3775,9 @@ void RenderingServer::init() {
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/anti_aliasing/screen_space_roughness_limiter/limit", PROPERTY_HINT_RANGE, "0.01,1.0,0.01"), 0.18);
 
 	GLOBAL_DEF_RST(PropertyInfo(Variant::FLOAT, "rendering/anti_aliasing/quality/smaa_edge_detection_threshold", PROPERTY_HINT_RANGE, "0.01,0.2,0.01"), 0.05);
+	// Read by TAA every frame, so they can be changed at run time (1.0 is the stock behavior).
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/anti_aliasing/quality/taa_clip_scale", PROPERTY_HINT_RANGE, "0.0,4.0,0.01"), 1.0);
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/anti_aliasing/quality/taa_flicker_reduction", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), 1.0);
 
 	GLOBAL_DEF("rendering/anti_aliasing/quality/use_debanding", false);
 

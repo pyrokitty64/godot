@@ -57,6 +57,8 @@ layout(push_constant, std430) uniform Params {
 	vec2 resolution;
 	float disocclusion_threshold; // 0.1 / max(params.resolution.x, params.resolution.y)
 	float variance_dynamic;
+	float flicker_reduction; // 1.0 stock, 0.0 off
+	float pad[3];
 }
 params;
 
@@ -376,7 +378,7 @@ vec3 temporal_antialiasing(uvec2 pos_group_top_left, uvec2 pos_group, uvec2 pos_
 		float diff = abs(lum_color - lum_history) / max(lum_color, max(lum_history, 1.001));
 		diff = 1.0 - diff;
 		diff = diff * diff;
-		blend_factor = mix(0.0, blend_factor, diff);
+		blend_factor = mix(0.0, blend_factor, mix(1.0, diff, params.flicker_reduction));
 
 		// Lerp/blend
 		color_resolved = mix(color_history, color_input, blend_factor);
