@@ -43,6 +43,7 @@ class GridMap;
 
 class GLTFDocument : public Resource {
 	GDCLASS(GLTFDocument, Resource);
+	friend struct BlendShapeBuild;
 
 public:
 	const int32_t JOINT_GROUP_SIZE = 4;

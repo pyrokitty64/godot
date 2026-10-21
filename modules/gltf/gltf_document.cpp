@@ -48,6 +48,7 @@
 #include "core/io/stream_peer.h"
 #include "core/object/class_db.h"
 #include "core/object/object_id.h"
+#include "core/object/worker_thread_pool.h"
 #include "core/version.h"
 #include "scene/3d/bone_attachment_3d.h"
 #include "scene/3d/camera_3d.h"
@@ -1420,6 +1421,170 @@ Error GLTFDocument::_serialize_meshes(Ref<GLTFState> p_state) {
 	return OK;
 }
 
+// The arrays of one blend shape (the surface plus one target's deltas), as add_surface wants them.
+struct BlendShapeBuild {
+	GLTFDocument *document = nullptr;
+	Ref<GLTFState> state;
+	const Array *targets = nullptr;
+	const Array *array = nullptr;
+	Vector<int> indices_mapping;
+	bool skin_8_weights = false;
+	bool generate_tangents = false;
+	LocalVector<Array> arrays;
+	LocalVector<uint8_t> unmoved;
+	SafeFlag failed;
+
+	static void run(void *p_userdata, uint32_t p_index) {
+		static_cast<BlendShapeBuild *>(p_userdata)->build(p_index, false);
+	}
+
+	static bool moves(const PackedVector3Array &p_deltas, int p_size) {
+		const Vector3 *r = p_deltas.ptr();
+		for (int l = 0; l < MIN(p_deltas.size(), p_size); l++) {
+			if (r[l] != Vector3()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// A target that moves nothing is only marked in unmoved, unless p_unmoved_too.
+	void build(uint32_t p_index, bool p_unmoved_too) {
+		const Dictionary &t = (*targets)[p_index];
+		const Vector<Vector3> src_varr = (*array)[Mesh::ARRAY_VERTEX];
+		const Vector<Vector3> src_narr = (*array)[Mesh::ARRAY_NORMAL];
+		const Vector<float> src_tangents = (*array)[Mesh::ARRAY_TANGENT];
+		Vector<Vector3> varr;
+		Vector<Vector3> narr;
+		Vector<Vector3> tangents_v3;
+		bool moved = false;
+		if (t.has("POSITION")) {
+			varr = document->_decode_accessor_as_vec3(state, t["POSITION"], indices_mapping);
+			moved = moved || moves(varr, src_varr.size());
+		}
+		if (t.has("NORMAL")) {
+			narr = document->_decode_accessor_as_vec3(state, t["NORMAL"], indices_mapping);
+			moved = moved || moves(narr, src_narr.size());
+		}
+		if (t.has("TANGENT")) {
+			tangents_v3 = document->_decode_accessor_as_vec3(state, t["TANGENT"], indices_mapping);
+			moved = moved || moves(tangents_v3, src_tangents.size() / 4);
+		}
+		if (!moved && !p_unmoved_too) {
+			unmoved[p_index] = 1;
+			return;
+		}
+
+		Array array_copy;
+		array_copy.resize(Mesh::ARRAY_MAX);
+
+		for (int l = 0; l < Mesh::ARRAY_MAX; l++) {
+			array_copy[l] = (*array)[l];
+		}
+
+		if (t.has("POSITION")) {
+			const int size = src_varr.size();
+			if (unlikely(size == 0)) {
+				failed.set();
+				ERR_FAIL_MSG("glTF: a blend shape's surface has no vertices.");
+			}
+			{
+				const int max_idx = varr.size();
+				varr.resize(size);
+
+				Vector3 *w_varr = varr.ptrw();
+				const Vector3 *r_varr = varr.ptr();
+				const Vector3 *r_src_varr = src_varr.ptr();
+				for (int l = 0; l < size; l++) {
+					if (l < max_idx) {
+						w_varr[l] = r_varr[l] + r_src_varr[l];
+					} else {
+						w_varr[l] = r_src_varr[l];
+					}
+				}
+			}
+			array_copy[Mesh::ARRAY_VERTEX] = varr;
+		}
+		if (t.has("NORMAL")) {
+			int size = src_narr.size();
+			if (unlikely(size == 0)) {
+				failed.set();
+				ERR_FAIL_MSG("glTF: a blend shape's surface has no normals.");
+			}
+			{
+				int max_idx = narr.size();
+				narr.resize(size);
+
+				Vector3 *w_narr = narr.ptrw();
+				const Vector3 *r_narr = narr.ptr();
+				const Vector3 *r_src_narr = src_narr.ptr();
+				for (int l = 0; l < size; l++) {
+					if (l < max_idx) {
+						w_narr[l] = r_narr[l] + r_src_narr[l];
+					} else {
+						w_narr[l] = r_src_narr[l];
+					}
+				}
+			}
+			array_copy[Mesh::ARRAY_NORMAL] = narr;
+		}
+		if (t.has("TANGENT")) {
+			if (unlikely(src_tangents.is_empty())) {
+				failed.set();
+				ERR_FAIL_MSG("glTF: a blend shape has tangents but its surface has none.");
+			}
+
+			Vector<float> tangents_v4;
+
+			{
+				int max_idx = tangents_v3.size();
+
+				int size4 = src_tangents.size();
+				tangents_v4.resize(size4);
+				float *w4 = tangents_v4.ptrw();
+
+				const Vector3 *r3 = tangents_v3.ptr();
+				const float *r4 = src_tangents.ptr();
+
+				for (int l = 0; l < size4 / 4; l++) {
+					if (l < max_idx) {
+						w4[l * 4 + 0] = r3[l].x + r4[l * 4 + 0];
+						w4[l * 4 + 1] = r3[l].y + r4[l * 4 + 1];
+						w4[l * 4 + 2] = r3[l].z + r4[l * 4 + 2];
+					} else {
+						w4[l * 4 + 0] = r4[l * 4 + 0];
+						w4[l * 4 + 1] = r4[l * 4 + 1];
+						w4[l * 4 + 2] = r4[l * 4 + 2];
+					}
+					w4[l * 4 + 3] = r4[l * 4 + 3]; //copy flip value
+				}
+			}
+
+			array_copy[Mesh::ARRAY_TANGENT] = tangents_v4;
+		}
+
+		Ref<SurfaceTool> blend_surface_tool;
+		blend_surface_tool.instantiate();
+		blend_surface_tool->create_from_triangle_arrays(array_copy);
+		if (skin_8_weights) {
+			blend_surface_tool->set_skin_weight_count(SurfaceTool::SKIN_8_WEIGHTS);
+		}
+		blend_surface_tool->index();
+		if (generate_tangents) {
+			blend_surface_tool->generate_tangents(/*split*/ false);
+		}
+		array_copy = blend_surface_tool->commit_to_arrays();
+
+		// Enforce blend shape mask array format
+		for (int l = 0; l < Mesh::ARRAY_MAX; l++) {
+			if (!(Mesh::ARRAY_FORMAT_BLEND_SHAPE_MASK & (1ULL << l))) {
+				array_copy[l] = Variant();
+			}
+		}
+		arrays[p_index] = array_copy;
+	}
+};
+
 Error GLTFDocument::_parse_meshes(Ref<GLTFState> p_state) {
 	if (!p_state->json.has("meshes")) {
 		return OK;
@@ -1865,114 +2030,35 @@ Error GLTFDocument::_parse_meshes(Ref<GLTFState> p_state) {
 					}
 				}
 
+				// A target that moves nothing comes out the same as every other such target (glTF gives each
+				// primitive all of its mesh's targets, so most are a single zero entry): it is built once.
+				// Each target is independent, so they are decoded and built on the worker threads.
+				BlendShapeBuild build;
+				build.document = this;
+				build.state = p_state;
+				build.targets = &targets;
+				build.array = &array;
+				build.indices_mapping = indices_mapping;
+				build.skin_8_weights = a.has("JOINTS_0") && a.has("JOINTS_1");
+				build.generate_tangents = generate_tangents;
+				build.arrays.resize(targets.size());
+				build.unmoved.resize_initialized(targets.size());
+				WorkerThreadPool::GroupID group = WorkerThreadPool::get_singleton()->add_native_group_task(
+						&BlendShapeBuild::run, &build, targets.size(), -1, false, "glTF blend shapes");
+				WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group);
+				int unmoved_target = -1;
 				for (int k = 0; k < targets.size(); k++) {
-					const Dictionary &t = targets[k];
-
-					Array array_copy;
-					array_copy.resize(Mesh::ARRAY_MAX);
-
-					for (int l = 0; l < Mesh::ARRAY_MAX; l++) {
-						array_copy[l] = array[l];
-					}
-
-					if (t.has("POSITION")) {
-						Vector<Vector3> varr = _decode_accessor_as_vec3(p_state, t["POSITION"], indices_mapping);
-						const Vector<Vector3> src_varr = array[Mesh::ARRAY_VERTEX];
-						const int size = src_varr.size();
-						ERR_FAIL_COND_V(size == 0, ERR_PARSE_ERROR);
-						{
-							const int max_idx = varr.size();
-							varr.resize(size);
-
-							Vector3 *w_varr = varr.ptrw();
-							const Vector3 *r_varr = varr.ptr();
-							const Vector3 *r_src_varr = src_varr.ptr();
-							for (int l = 0; l < size; l++) {
-								if (l < max_idx) {
-									w_varr[l] = r_varr[l] + r_src_varr[l];
-								} else {
-									w_varr[l] = r_src_varr[l];
-								}
-							}
+					if (build.unmoved[k]) {
+						if (unmoved_target < 0) {
+							unmoved_target = k;
+							build.build(k, true);
 						}
-						array_copy[Mesh::ARRAY_VERTEX] = varr;
+						build.arrays[k] = build.arrays[unmoved_target];
 					}
-					if (t.has("NORMAL")) {
-						Vector<Vector3> narr = _decode_accessor_as_vec3(p_state, t["NORMAL"], indices_mapping);
-						const Vector<Vector3> src_narr = array[Mesh::ARRAY_NORMAL];
-						int size = src_narr.size();
-						ERR_FAIL_COND_V(size == 0, ERR_PARSE_ERROR);
-						{
-							int max_idx = narr.size();
-							narr.resize(size);
-
-							Vector3 *w_narr = narr.ptrw();
-							const Vector3 *r_narr = narr.ptr();
-							const Vector3 *r_src_narr = src_narr.ptr();
-							for (int l = 0; l < size; l++) {
-								if (l < max_idx) {
-									w_narr[l] = r_narr[l] + r_src_narr[l];
-								} else {
-									w_narr[l] = r_src_narr[l];
-								}
-							}
-						}
-						array_copy[Mesh::ARRAY_NORMAL] = narr;
-					}
-					if (t.has("TANGENT")) {
-						const Vector<Vector3> tangents_v3 = _decode_accessor_as_vec3(p_state, t["TANGENT"], indices_mapping);
-						const Vector<float> src_tangents = array[Mesh::ARRAY_TANGENT];
-						ERR_FAIL_COND_V(src_tangents.is_empty(), ERR_PARSE_ERROR);
-
-						Vector<float> tangents_v4;
-
-						{
-							int max_idx = tangents_v3.size();
-
-							int size4 = src_tangents.size();
-							tangents_v4.resize(size4);
-							float *w4 = tangents_v4.ptrw();
-
-							const Vector3 *r3 = tangents_v3.ptr();
-							const float *r4 = src_tangents.ptr();
-
-							for (int l = 0; l < size4 / 4; l++) {
-								if (l < max_idx) {
-									w4[l * 4 + 0] = r3[l].x + r4[l * 4 + 0];
-									w4[l * 4 + 1] = r3[l].y + r4[l * 4 + 1];
-									w4[l * 4 + 2] = r3[l].z + r4[l * 4 + 2];
-								} else {
-									w4[l * 4 + 0] = r4[l * 4 + 0];
-									w4[l * 4 + 1] = r4[l * 4 + 1];
-									w4[l * 4 + 2] = r4[l * 4 + 2];
-								}
-								w4[l * 4 + 3] = r4[l * 4 + 3]; //copy flip value
-							}
-						}
-
-						array_copy[Mesh::ARRAY_TANGENT] = tangents_v4;
-					}
-
-					Ref<SurfaceTool> blend_surface_tool;
-					blend_surface_tool.instantiate();
-					blend_surface_tool->create_from_triangle_arrays(array_copy);
-					if (a.has("JOINTS_0") && a.has("JOINTS_1")) {
-						blend_surface_tool->set_skin_weight_count(SurfaceTool::SKIN_8_WEIGHTS);
-					}
-					blend_surface_tool->index();
-					if (generate_tangents) {
-						blend_surface_tool->generate_tangents(/*split*/ false);
-					}
-					array_copy = blend_surface_tool->commit_to_arrays();
-
-					// Enforce blend shape mask array format
-					for (int l = 0; l < Mesh::ARRAY_MAX; l++) {
-						if (!(Mesh::ARRAY_FORMAT_BLEND_SHAPE_MASK & (1ULL << l))) {
-							array_copy[l] = Variant();
-						}
-					}
-
-					morphs.push_back(array_copy);
+				}
+				ERR_FAIL_COND_V(build.failed.is_set(), ERR_PARSE_ERROR);
+				for (const Array &morph : build.arrays) {
+					morphs.push_back(morph);
 				}
 			}
 			import_mesh->add_surface(primitive, array, morphs,
