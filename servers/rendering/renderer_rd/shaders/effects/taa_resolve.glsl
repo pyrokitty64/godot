@@ -298,8 +298,12 @@ vec3 clip_history_3x3(uvec2 group_pos, vec3 color_history, vec2 velocity_closest
 	// Use variance clipping as described in https://developer.download.nvidia.com/gameworks/events/GDC2016/msalvi_temporal_supersampling.pdf
 	float box_size = mix(0.0f, params.variance_dynamic, smoothstep(0.02f, 0.0f, length(velocity_closest)));
 	vec3 dev = sqrt(abs(color_avg2 - (color_avg * color_avg))) * box_size;
-	vec3 color_min = color_avg - dev;
-	vec3 color_max = color_avg + dev;
+	// Never wider than the neighbours' own range: beside one very bright pixel (the sun) avg - dev goes far below
+	// every neighbour, and Catmull-Rom's undershoot (black history) would pass the clip and stay.
+	vec3 nb_min = min(min(min(s1, s2), min(s3, s4)), min(min(s5, s6), min(min(s7, s8), s9)));
+	vec3 nb_max = max(max(max(s1, s2), max(s3, s4)), max(max(s5, s6), max(max(s7, s8), s9)));
+	vec3 color_min = max(color_avg - dev, nb_min);
+	vec3 color_max = min(color_avg + dev, nb_max);
 
 	// Variance clipping
 	vec3 color = clip_aabb(color_min, color_max, clamp(color_avg, color_min, color_max), color_history);
