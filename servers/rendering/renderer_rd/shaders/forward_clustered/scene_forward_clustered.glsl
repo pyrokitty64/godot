@@ -1228,7 +1228,8 @@ void fragment_shader(in SceneData scene_data) {
 #ifdef NORMAL_USED
 	vec3 normal_highp = normal_interp;
 #if defined(DO_SIDE_CHECK)
-	if (!gl_FrontFacing) {
+	// Reflection probe faces render unflipped, so there gl_FrontFacing is true for back faces.
+	if (gl_FrontFacing == bool(scene_data_block.data.flags & SCENE_DATA_FLAGS_IN_REFLECTION_PROBE_PASS)) {
 		normal_highp = -normal_highp;
 	}
 #endif // DO_SIDE_CHECK

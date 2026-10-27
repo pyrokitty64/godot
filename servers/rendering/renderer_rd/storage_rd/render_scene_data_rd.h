@@ -113,6 +113,9 @@ private:
 		SCENE_DATA_FLAGS_USE_UV2_MATERIAL = 1 << 6,
 		SCENE_DATA_FLAGS_USE_PANCAKE_SHADOWS = 1 << 7,
 		SCENE_DATA_FLAGS_IN_SHADOW_PASS = 1 << 8, // Only used by Forward+ renderer.
+		// Reflection probe faces render without the Y flip, so the GPU reports front faces as back faces.
+		// Only used by Forward+ renderer.
+		SCENE_DATA_FLAGS_IN_REFLECTION_PROBE_PASS = 1 << 9,
 		SCENE_DATA_FLAGS_MAX
 	};
 

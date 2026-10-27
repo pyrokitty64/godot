@@ -750,7 +750,8 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.renames["VIEWPORT_SIZE"] = "read_viewport_size";
 
 		actions.renames["FRAGCOORD"] = "gl_FragCoord";
-		actions.renames["FRONT_FACING"] = "gl_FrontFacing";
+		// Reflection probe faces render unflipped, so there gl_FrontFacing is true for back faces.
+		actions.renames["FRONT_FACING"] = "(gl_FrontFacing != bool(scene_data_block.data.flags & SCENE_DATA_FLAGS_IN_REFLECTION_PROBE_PASS))";
 		actions.renames["NORMAL_MAP"] = "normal_map";
 		actions.renames["NORMAL_MAP_DEPTH"] = "normal_map_depth";
 		actions.renames["BENT_NORMAL_MAP"] = "bent_normal_map";
