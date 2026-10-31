@@ -41,7 +41,10 @@ public:
 	TAA();
 	~TAA();
 
-	void process(Ref<RenderSceneBuffersRD> p_render_buffers, const RenderSceneDataRD *p_scene_data, RD::DataFormat p_format, float p_z_near, float p_z_far);
+	// p_read_msaa_color: read the multisampled colour instead of the internal texture, which the caller hasn't resolved
+	// into (only with a history, see has_history()), and write the result straight into the internal texture.
+	void process(Ref<RenderSceneBuffersRD> p_render_buffers, const RenderSceneDataRD *p_scene_data, RD::DataFormat p_format, float p_z_near, float p_z_far, bool p_read_msaa_color = false);
+	bool has_history(Ref<RenderSceneBuffersRD> p_render_buffers) const;
 
 private:
 	struct TAAResolvePushConstant {
@@ -56,9 +59,20 @@ private:
 
 	TaaResolveShaderRD taa_shader;
 	RID shader_version;
-	RID pipeline;
+	RID pipelines[2]; // Internal texture input, multisampled colour input.
 
-	void resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, const Projection &p_reprojection, Size2 p_resolution, float p_z_near, float p_z_far);
+	// Which of the two history textures holds last frame's result; the resolve writes the other one.
+	class TAABuffers : public RenderBufferCustomDataRD {
+		GDCLASS(TAABuffers, RenderBufferCustomDataRD);
+
+	public:
+		uint32_t last = 0;
+
+		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override {}
+		virtual void free_data() override {}
+	};
+
+	void resolve(RID p_frame, RID p_dest, RID p_internal_dest, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, const Projection &p_reprojection, Size2 p_resolution, float p_z_near, float p_z_far);
 };
 
 } // namespace RendererRD

@@ -2522,10 +2522,19 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 
 	RD::get_singleton()->draw_command_begin_label("Resolve");
 
+	// With MSAA, TAA can read the multisampled colour itself and write the internal texture, so the colour isn't
+	// resolved here, as long as nothing reads the internal texture before TAA does (SSR, SSIL, post-transparent
+	// compositor effects, debug views) and TAA has a history (without one it only copies the frame).
+	const bool taa_reads_msaa_color = rb_data.is_valid() && use_msaa && using_taa && !using_upscaling && !using_ssr && !using_ssil &&
+			get_debug_draw_mode() == RSE::VIEWPORT_DEBUG_DRAW_DISABLED &&
+			!_has_compositor_effect(RSE::COMPOSITOR_EFFECT_CALLBACK_TYPE_POST_TRANSPARENT, p_render_data) && taa->has_history(rb);
+
 	if (rb_data.is_valid() && use_msaa) {
 		bool resolve_velocity_buffer = (using_taa || using_upscaling || ce_needs_motion_vectors) && rb->has_velocity_buffer(true);
 		for (uint32_t v = 0; v < rb->get_view_count(); v++) {
-			RD::get_singleton()->texture_resolve_multisample(rb->get_color_msaa(v), rb->get_internal_texture(v));
+			if (!taa_reads_msaa_color) {
+				RD::get_singleton()->texture_resolve_multisample(rb->get_color_msaa(v), rb->get_internal_texture(v));
+			}
 			resolve_effects->resolve_depth(rb->get_depth_msaa(v), rb->get_depth_texture(v), rb->get_internal_size(), texture_multisamples[msaa]);
 
 			if (resolve_velocity_buffer) {
@@ -2632,7 +2641,7 @@ void RenderForwardClustered::_render_scene(RenderDataRD *p_render_data, const Co
 		} else if (using_taa) {
 			RD::get_singleton()->draw_command_begin_label("TAA");
 			RENDER_TIMESTAMP("TAA");
-			taa->process(rb, p_render_data->scene_data, rb->get_base_data_format(), p_render_data->scene_data->z_near, p_render_data->scene_data->z_far);
+			taa->process(rb, p_render_data->scene_data, rb->get_base_data_format(), p_render_data->scene_data->z_near, p_render_data->scene_data->z_far, taa_reads_msaa_color);
 			RD::get_singleton()->draw_command_end_label();
 		}
 	}

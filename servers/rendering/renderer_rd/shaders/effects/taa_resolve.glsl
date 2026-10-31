@@ -43,12 +43,21 @@
 
 layout(local_size_x = GROUP_SIZE, local_size_y = GROUP_SIZE, local_size_z = 1) in;
 
+#ifdef MSAA_INPUT
+// The multisampled colour, averaged here (the box resolve) instead of by a separate resolve into the internal texture.
+layout(set = 0, binding = 0) uniform sampler2DMS color_buffer;
+#else
 layout(rgba16f, set = 0, binding = 0) uniform restrict readonly image2D color_buffer;
+#endif
 layout(set = 0, binding = 1) uniform sampler2D depth_buffer;
 layout(rg16f, set = 0, binding = 2) uniform restrict readonly image2D velocity_buffer;
 layout(rg16f, set = 0, binding = 3) uniform restrict readonly image2D last_velocity_buffer;
 layout(set = 0, binding = 4) uniform sampler2D history_buffer;
 layout(rgba16f, set = 0, binding = 5) uniform restrict writeonly image2D output_buffer;
+#ifdef MSAA_INPUT
+// The color input isn't the internal texture, so the result goes there directly as well as to the history.
+layout(rgba16f, set = 0, binding = 6) uniform restrict writeonly image2D output_internal;
+#endif
 
 #include "motion_vector_inc.glsl"
 
@@ -119,7 +128,19 @@ void store_color_depth(uvec2 group_thread_id, ivec2 thread_id) {
 	// out of bounds clamp
 	thread_id = clamp(thread_id, ivec2(0, 0), ivec2(params.resolution) - ivec2(1, 1));
 
+#ifdef MSAA_INPUT
+	int samples = textureSamples(color_buffer);
+	vec3 color = vec3(0.0);
+	for (int i = 0; i < samples; i++) {
+		color += texelFetch(color_buffer, thread_id, i).rgb;
+	}
+	color /= float(samples);
+	// Round to half precision, as the resolve into the rgba16f internal texture did.
+	color = vec3(unpackHalf2x16(packHalf2x16(color.rg)), unpackHalf2x16(packHalf2x16(vec2(color.b, 0.0))).x);
+	store_color(group_thread_id, color);
+#else
 	store_color(group_thread_id, imageLoad(color_buffer, thread_id).rgb);
+#endif
 	store_depth(group_thread_id, get_depth(thread_id));
 }
 
@@ -409,4 +430,7 @@ void main() {
 
 	vec3 result = temporal_antialiasing(pos_group_top_left, pos_group, pos_screen, uv, history_buffer);
 	imageStore(output_buffer, ivec2(gl_GlobalInvocationID.xy), vec4(result, 1.0));
+#ifdef MSAA_INPUT
+	imageStore(output_internal, ivec2(gl_GlobalInvocationID.xy), vec4(result, 1.0));
+#endif
 }
