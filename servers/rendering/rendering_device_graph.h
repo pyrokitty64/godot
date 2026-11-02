@@ -89,6 +89,8 @@ public:
 			TYPE_DRAW_INDEXED_INDIRECT,
 			TYPE_EXECUTE_COMMANDS,
 			TYPE_NEXT_SUBPASS,
+			TYPE_BEGIN_LABEL,
+			TYPE_END_LABEL,
 			TYPE_SET_BLEND_CONSTANTS,
 			TYPE_SET_LINE_WIDTH,
 			TYPE_SET_PUSH_CONSTANT,
@@ -667,6 +669,19 @@ private:
 		Color color;
 	};
 
+	// A label around single draws inside a draw list (RenderDoc shows which node a draw belongs to).
+	struct DrawListBeginLabelInstruction : DrawListInstruction {
+		uint32_t size = 0; // Includes the terminating zero.
+
+		_FORCE_INLINE_ char *data() {
+			return reinterpret_cast<char *>(&this[1]);
+		}
+
+		_FORCE_INLINE_ const char *data() const {
+			return reinterpret_cast<const char *>(&this[1]);
+		}
+	};
+
 	struct DrawListSetLineWidthInstruction : DrawListInstruction {
 		float width;
 	};
@@ -940,6 +955,8 @@ public:
 	void add_draw_list_execute_commands(RDD::CommandBufferID p_command_buffer);
 	void add_draw_list_next_subpass(RDD::CommandBufferType p_command_buffer_type);
 	void add_draw_list_set_blend_constants(const Color &p_color);
+	void add_draw_list_begin_label(const char *p_label);
+	void add_draw_list_end_label();
 	void add_draw_list_set_line_width(float p_width);
 	void add_draw_list_set_push_constant(RDD::ShaderID p_shader, const void *p_data, uint32_t p_data_size);
 	void add_draw_list_set_scissor(Rect2i p_rect);

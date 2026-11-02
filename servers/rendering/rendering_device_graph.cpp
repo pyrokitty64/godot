@@ -1032,6 +1032,15 @@ void RenderingDeviceGraph::_run_draw_list_command(RDD::CommandBufferID p_command
 				driver->command_render_set_blend_constants(p_command_buffer, set_blend_constants_instruction->color);
 				instruction_data_cursor += sizeof(DrawListSetBlendConstantsInstruction);
 			} break;
+			case DrawListInstruction::TYPE_BEGIN_LABEL: {
+				const DrawListBeginLabelInstruction *begin_label_instruction = reinterpret_cast<const DrawListBeginLabelInstruction *>(instruction);
+				driver->command_begin_label(p_command_buffer, begin_label_instruction->data(), Color(1, 1, 1, 1));
+				instruction_data_cursor += sizeof(DrawListBeginLabelInstruction) + begin_label_instruction->size;
+			} break;
+			case DrawListInstruction::TYPE_END_LABEL: {
+				driver->command_end_label(p_command_buffer);
+				instruction_data_cursor += sizeof(DrawListInstruction);
+			} break;
 			case DrawListInstruction::TYPE_SET_LINE_WIDTH: {
 				const DrawListSetLineWidthInstruction *set_line_width_instruction = reinterpret_cast<const DrawListSetLineWidthInstruction *>(instruction);
 				driver->command_render_set_line_width(p_command_buffer, set_line_width_instruction->width);
@@ -1628,6 +1637,15 @@ void RenderingDeviceGraph::_print_draw_list(const uint8_t *p_instruction_data, u
 				const DrawListSetBlendConstantsInstruction *set_blend_constants_instruction = reinterpret_cast<const DrawListSetBlendConstantsInstruction *>(instruction);
 				print_line("\tSET BLEND CONSTANTS COLOR", set_blend_constants_instruction->color);
 				instruction_data_cursor += sizeof(DrawListSetBlendConstantsInstruction);
+			} break;
+			case DrawListInstruction::TYPE_BEGIN_LABEL: {
+				const DrawListBeginLabelInstruction *begin_label_instruction = reinterpret_cast<const DrawListBeginLabelInstruction *>(instruction);
+				print_line("\tBEGIN LABEL", begin_label_instruction->data());
+				instruction_data_cursor += sizeof(DrawListBeginLabelInstruction) + begin_label_instruction->size;
+			} break;
+			case DrawListInstruction::TYPE_END_LABEL: {
+				print_line("\tEND LABEL");
+				instruction_data_cursor += sizeof(DrawListInstruction);
 			} break;
 			case DrawListInstruction::TYPE_SET_LINE_WIDTH: {
 				const DrawListSetLineWidthInstruction *set_line_width_instruction = reinterpret_cast<const DrawListSetLineWidthInstruction *>(instruction);
@@ -2306,6 +2324,19 @@ void RenderingDeviceGraph::add_draw_list_set_blend_constants(const Color &p_colo
 	DrawListSetBlendConstantsInstruction *instruction = reinterpret_cast<DrawListSetBlendConstantsInstruction *>(_allocate_draw_list_instruction(sizeof(DrawListSetBlendConstantsInstruction)));
 	instruction->type = DrawListInstruction::TYPE_SET_BLEND_CONSTANTS;
 	instruction->color = p_color;
+}
+
+void RenderingDeviceGraph::add_draw_list_begin_label(const char *p_label) {
+	uint32_t size = strlen(p_label) + 1;
+	DrawListBeginLabelInstruction *instruction = reinterpret_cast<DrawListBeginLabelInstruction *>(_allocate_draw_list_instruction(sizeof(DrawListBeginLabelInstruction) + size));
+	instruction->type = DrawListInstruction::TYPE_BEGIN_LABEL;
+	instruction->size = size;
+	memcpy(instruction->data(), p_label, size);
+}
+
+void RenderingDeviceGraph::add_draw_list_end_label() {
+	DrawListInstruction *instruction = _allocate_draw_list_instruction(sizeof(DrawListInstruction));
+	instruction->type = DrawListInstruction::TYPE_END_LABEL;
 }
 
 void RenderingDeviceGraph::add_draw_list_set_line_width(float p_width) {

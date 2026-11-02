@@ -771,6 +771,7 @@ void RendererSceneCull::instance_set_base(RID p_instance, RID p_base) {
 				geom->geometry_instance->set_surface_materials(instance->materials);
 				geom->geometry_instance->set_transform(instance->transform, instance->aabb, instance->transformed_aabb);
 				geom->geometry_instance->set_layer_mask(instance->layer_mask);
+				geom->geometry_instance->object_id = instance->object_id;
 				geom->geometry_instance->set_pivot_data(instance->sorting_offset, instance->use_aabb_center);
 				geom->geometry_instance->set_lod_bias(instance->lod_bias);
 				geom->geometry_instance->set_transparency(instance->transparency);
@@ -1049,6 +1050,12 @@ void RendererSceneCull::instance_attach_object_instance_id(RID p_instance, Objec
 	ERR_FAIL_NULL(instance);
 
 	instance->object_id = p_id;
+	if (((1 << instance->base_type) & RSE::INSTANCE_GEOMETRY_MASK) && instance->base_data) {
+		InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(instance->base_data);
+		if (geom->geometry_instance) {
+			geom->geometry_instance->object_id = p_id;
+		}
+	}
 }
 
 PackedVector3Array RendererSceneCull::instance_debug_get_skinned_vertices(RID p_instance, int p_surface) {

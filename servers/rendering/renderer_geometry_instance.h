@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/math/color.h"
+#include "core/object/object_id.h"
 #include "core/math/rect2.h"
 #include "core/math/transform_3d.h"
 #include "core/templates/rid.h"
@@ -39,6 +40,8 @@
 // API definition for our RenderGeometryInstance class so we can expose this through GDExtension in the near future
 class RenderGeometryInstance {
 public:
+	ObjectID object_id; // The node that owns this instance; names draws in debug labels.
+
 	virtual ~RenderGeometryInstance() {}
 
 	virtual void _mark_dirty() = 0;

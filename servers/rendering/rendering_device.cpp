@@ -6118,6 +6118,22 @@ void RenderingDevice::draw_list_set_push_constant(DrawListID p_list, const void 
 #endif
 }
 
+bool RenderingDevice::draw_list_labels_enabled() const {
+	return context->is_debug_utils_enabled();
+}
+
+void RenderingDevice::draw_list_begin_label(DrawListID p_list, const char *p_label) {
+	ERR_RENDER_THREAD_GUARD();
+	ERR_FAIL_COND(!draw_list.active);
+	draw_graph.add_draw_list_begin_label(p_label);
+}
+
+void RenderingDevice::draw_list_end_label(DrawListID p_list) {
+	ERR_RENDER_THREAD_GUARD();
+	ERR_FAIL_COND(!draw_list.active);
+	draw_graph.add_draw_list_end_label();
+}
+
 void RenderingDevice::draw_list_draw(DrawListID p_list, bool p_use_indices, uint32_t p_instances, uint32_t p_procedural_vertices) {
 	ERR_RENDER_THREAD_GUARD();
 
