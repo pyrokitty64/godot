@@ -32,6 +32,7 @@
 
 #include "core/object/object.h"
 #include "core/variant/array.h"
+#include "core/variant/dictionary.h"
 
 // The pony game's world generation loops that are too slow in GDScript (world_gen.gd).
 class WorldKernels : public Object {
@@ -42,4 +43,20 @@ protected:
 
 public:
 	static Array priority_flood(const PackedFloat32Array &p_heights, int p_px, double p_sea_floor, const PackedInt32Array &p_gates, const PackedByteArray &p_rise, double p_eps);
+	static Array island_heights(const Dictionary &p_params);
+	static Dictionary biome_fields(const Dictionary &p_params);
+	static Dictionary hydrology(const Dictionary &p_params);
+	static PackedInt32Array ring_distance(const PackedFloat32Array &p_levels, int p_size, int p_rings);
+	static Dictionary water_map(const Dictionary &p_params);
+	static PackedFloat32Array resample_grid(const PackedFloat32Array &p_src, int p_src_px, int p_dst_px, double p_step);
+	static PackedFloat32Array erode(const Dictionary &p_params);
+	static PackedFloat32Array slope(const PackedFloat32Array &p_heights, int p_size, int p_o, double p_inv);
+	static PackedFloat32Array floor_up(const PackedFloat32Array &p_src, int p_src_px, int p_dst_px, double p_k);
+	static Dictionary control_map(const Dictionary &p_params);
+	static Dictionary road_grid(const Dictionary &p_params);
+	static PackedInt32Array road_astar(const Dictionary &p_params);
+	static PackedInt32Array road_rasterize(const Dictionary &p_params);
+	static Dictionary barn_find(const Dictionary &p_params);
+	static Dictionary foliage(const Dictionary &p_params);
+	static void chunk_insert(Dictionary p_store, Dictionary p_near_grid, int p_id, const Array &p_xforms, const PackedColorArray &p_colors, double p_chunk_m, double p_near_cell_m);
 };
