@@ -35,6 +35,8 @@
 #include "../shapes/jolt_shape_3d.h"
 #include "../spaces/jolt_space_3d.h"
 
+#include "core/object/worker_thread_pool.h"
+
 #include <Jolt/Physics/Collision/Shape/EmptyShape.h>
 #include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
@@ -47,6 +49,20 @@ bool JoltShapedObject3D::_is_big() const {
 JPH::ShapeRefC JoltShapedObject3D::_try_build_shape(bool p_optimize_compound) {
 	bool has_back_face_collision = is_area();
 	int built_shapes = 0;
+
+	// Build the shapes nothing has built yet side by side (each JoltShape3D::try_build locks its own
+	// mutex): a 1025x1025 height map takes ~60 ms, and a terrain body holds one per region.
+	LocalVector<JoltShape3D *> unbuilt;
+	for (JoltShapeInstance3D &shape : shapes) {
+		if (shape.is_enabled() && shape.get_shape()->get_jolt_ref() == nullptr) {
+			unbuilt.push_back(shape.get_shape());
+		}
+	}
+	if (unbuilt.size() > 1) {
+		WorkerThreadPool::GroupID group = WorkerThreadPool::get_singleton()->add_template_group_task(
+				this, &JoltShapedObject3D::_build_unbuilt_shape, unbuilt.ptr(), unbuilt.size(), -1, true, SNAME("JoltBuildShapes"));
+		WorkerThreadPool::get_singleton()->wait_for_group_task_completion(group);
+	}
 
 	for (JoltShapeInstance3D &shape : shapes) {
 		if (shape.is_enabled() && shape.try_build(has_back_face_collision)) {
@@ -74,6 +90,10 @@ JPH::ShapeRefC JoltShapedObject3D::_try_build_shape(bool p_optimize_compound) {
 	}
 
 	return result;
+}
+
+void JoltShapedObject3D::_build_unbuilt_shape(uint32_t p_index, JoltShape3D **p_shapes) {
+	p_shapes[p_index]->try_build();
 }
 
 JPH::ShapeRefC JoltShapedObject3D::_try_build_single_shape() {

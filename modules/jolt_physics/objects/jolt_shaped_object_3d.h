@@ -60,6 +60,7 @@ protected:
 	bool _is_big() const;
 
 	JPH::ShapeRefC _try_build_shape(bool p_optimize_compound);
+	void _build_unbuilt_shape(uint32_t p_index, JoltShape3D **p_shapes);
 	JPH::ShapeRefC _try_build_single_shape();
 	JPH::ShapeRefC _try_build_compound_shape(bool p_optimize);
 
