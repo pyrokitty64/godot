@@ -1655,6 +1655,12 @@ void MeshStorage::_multimesh_allocate_data(RID p_multimesh, int p_instances, RSE
 
 	if (multimesh->instances) {
 		uint32_t buffer_size = multimesh->instances * multimesh->stride_cache * sizeof(float);
+		// With motion vectors in use the first transform or buffer set doubles the buffer
+		// (_multimesh_enable_motion_vectors); start at that size instead of making it twice.
+		if (p_transform_format == RSE::MULTIMESH_TRANSFORM_3D && ((RSG::viewport->get_num_viewports_with_motion_vectors() > 0) || (RendererCompositorStorage::get_singleton()->get_num_compositor_effects_with_motion_vectors() > 0))) {
+			multimesh->motion_vectors_enabled = true;
+			buffer_size *= 2;
+		}
 		LocalVector<uint8_t> zeros;
 		zeros.resize_initialized(buffer_size);
 		multimesh->buffer = RD::get_singleton()->storage_buffer_create(buffer_size, zeros.span());
@@ -2197,8 +2203,8 @@ void MeshStorage::_multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_
 	{
 		const float *r = p_buffer.ptr();
 		RD::get_singleton()->buffer_update(multimesh->buffer, multimesh->motion_vectors_current_offset * multimesh->stride_cache * sizeof(float), p_buffer.size() * sizeof(float), r);
-		if (multimesh->motion_vectors_enabled && !used_motion_vectors) {
-			// Motion vectors were just enabled, and the other half of the buffer will be empty.
+		if (multimesh->motion_vectors_enabled && (!used_motion_vectors || !multimesh->buffer_set)) {
+			// Motion vectors were just enabled (or came with allocate_data), and the other half of the buffer will be empty.
 			// Need to ensure that both halves are filled for correct operation.
 			RD::get_singleton()->buffer_update(multimesh->buffer, multimesh->motion_vectors_previous_offset * multimesh->stride_cache * sizeof(float), p_buffer.size() * sizeof(float), r);
 		}
