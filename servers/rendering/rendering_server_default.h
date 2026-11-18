@@ -959,6 +959,7 @@ public:
 	FUNC2(instance_attach_object_instance_id, RID, ObjectID)
 	FUNC3(instance_set_blend_shape_weight, RID, int, float)
 	FUNC2R(PackedVector3Array, instance_debug_get_skinned_vertices, RID, int)
+	FUNC2(instance_set_post_skin_callback, RID, const Callable &)
 	FUNC3(instance_set_surface_override_material, RID, int, RID)
 	FUNC2(instance_set_visible, RID, bool)
 

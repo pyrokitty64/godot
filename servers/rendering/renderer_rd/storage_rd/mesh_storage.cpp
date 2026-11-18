@@ -30,6 +30,7 @@
 
 #include "mesh_storage.h"
 
+#include "core/templates/pair.h"
 #include "servers/rendering/renderer_viewport.h"
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_server_types.h"
@@ -1167,10 +1168,18 @@ void MeshStorage::_mesh_instance_remove_surface(MeshInstance *mi, int p_surface)
 	mi->dirty = true;
 }
 
+void MeshStorage::mesh_instance_set_post_skin_callback(RID p_mesh_instance, const Callable &p_callback) {
+	MeshInstance *mi = mesh_instance_owner.get_or_null(p_mesh_instance);
+	ERR_FAIL_NULL(mi);
+	mi->post_skin_callback = p_callback;
+	mi->dirty = true;
+}
+
 void MeshStorage::mesh_instance_check_for_update(RID p_mesh_instance) {
 	MeshInstance *mi = mesh_instance_owner.get_or_null(p_mesh_instance);
 
-	bool needs_update = mi->dirty;
+	// The callback writes into the skinned buffers, so they are skinned afresh once every frame, even when still.
+	bool needs_update = mi->dirty || (mi->post_skin_callback.is_valid() && mi->post_skin_frame != RSG::rasterizer->get_frame_number());
 
 	if (mi->weights_dirty && !mi->weight_update_list.in_list()) {
 		dirty_mesh_instance_weights.add(&mi->weight_update_list);
@@ -1216,9 +1225,11 @@ void MeshStorage::update_mesh_instances() {
 	uint64_t frame = RSG::rasterizer->get_frame_number();
 	bool uses_motion_vectors = (RSG::viewport->get_num_viewports_with_motion_vectors() > 0) || (RendererCompositorStorage::get_singleton()->get_num_compositor_effects_with_motion_vectors() > 0);
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
+	LocalVector<Pair<Callable, Array>> post_skin_calls;
 
 	while (dirty_mesh_instance_arrays.first()) {
 		MeshInstance *mi = dirty_mesh_instance_arrays.first()->self();
+		Array post_skin_surfaces;
 
 		Skeleton *sk = skeleton_owner.get_or_null(mi->skeleton);
 
@@ -1303,6 +1314,25 @@ void MeshStorage::update_mesh_instances() {
 
 			//dispatch without barrier, so all is done at the same time
 			RD::get_singleton()->compute_list_dispatch_threads(compute_list, push_constant.vertex_count, 1, 1);
+
+			if (mi->post_skin_callback.is_valid()) {
+				// Positions are 3 floats at index * vertex_stride (in 4-byte words); octahedral normal, then tangent,
+				// one uint each, from vertex_count * vertex_stride on.
+				Dictionary d;
+				d["buffer"] = mi->surfaces[i].vertex_buffer[mi->surfaces[i].current_buffer];
+				d["vertex_count"] = push_constant.vertex_count;
+				d["vertex_stride"] = push_constant.vertex_stride;
+				d["has_normal"] = bool(push_constant.has_normal);
+				d["has_tangent"] = bool(push_constant.has_tangent);
+				post_skin_surfaces.resize(i + 1);
+				post_skin_surfaces[i] = d;
+			}
+		}
+
+		if (mi->post_skin_callback.is_valid()) {
+			post_skin_surfaces.resize(mi->surfaces.size());
+			post_skin_calls.push_back(Pair<Callable, Array>(mi->post_skin_callback, post_skin_surfaces));
+			mi->post_skin_frame = frame;
 		}
 
 		mi->dirty = false;
@@ -1313,6 +1343,12 @@ void MeshStorage::update_mesh_instances() {
 	}
 
 	RD::get_singleton()->compute_list_end();
+
+	// After the list ends, so the skinning is done (the graph puts the barrier in) before the callbacks' own work,
+	// and before any pass draws these buffers this frame. A second skinning in the same frame calls again.
+	for (const Pair<Callable, Array> &call : post_skin_calls) {
+		call.first.call(call.second, frame);
+	}
 }
 
 RD::VertexFormatID MeshStorage::_mesh_surface_generate_vertex_format(uint64_t p_surface_format, uint64_t p_input_mask, bool p_instanced_surface, bool p_input_motion_vectors, bool p_point_size_emulated, uint32_t &r_position_stride) {

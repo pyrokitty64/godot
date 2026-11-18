@@ -750,6 +750,7 @@ public:
 	virtual void instance_attach_object_instance_id(RID p_instance, ObjectID p_id) = 0;
 	virtual void instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight) = 0;
 	virtual PackedVector3Array instance_debug_get_skinned_vertices(RID p_instance, int p_surface) = 0;
+	virtual void instance_set_post_skin_callback(RID p_instance, const Callable &p_callback) = 0;
 	virtual void instance_set_surface_override_material(RID p_instance, int p_surface, RID p_material) = 0;
 	virtual void instance_set_visible(RID p_instance, bool p_visible) = 0;
 

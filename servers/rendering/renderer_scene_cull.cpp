@@ -594,6 +594,7 @@ void RendererSceneCull::_instance_update_mesh_instance(Instance *p_instance) con
 	if (needs_instance != p_instance->mesh_instance.is_valid()) {
 		if (needs_instance) {
 			p_instance->mesh_instance = RSG::mesh_storage->mesh_instance_create(p_instance->base);
+			RSG::mesh_storage->mesh_instance_set_post_skin_callback(p_instance->mesh_instance, p_instance->post_skin_callback);
 
 		} else {
 			RSG::mesh_storage->mesh_instance_free(p_instance->mesh_instance);
@@ -1063,6 +1064,15 @@ PackedVector3Array RendererSceneCull::instance_debug_get_skinned_vertices(RID p_
 	ERR_FAIL_NULL_V(instance, PackedVector3Array());
 	ERR_FAIL_COND_V_MSG(instance->mesh_instance.is_null(), PackedVector3Array(), "This instance isn't skinned or blended.");
 	return RSG::mesh_storage->mesh_instance_debug_get_skinned_vertices(instance->mesh_instance, p_surface);
+}
+
+void RendererSceneCull::instance_set_post_skin_callback(RID p_instance, const Callable &p_callback) {
+	Instance *instance = instance_owner.get_or_null(p_instance);
+	ERR_FAIL_NULL(instance);
+	instance->post_skin_callback = p_callback;
+	if (instance->mesh_instance.is_valid()) {
+		RSG::mesh_storage->mesh_instance_set_post_skin_callback(instance->mesh_instance, p_callback);
+	}
 }
 
 void RendererSceneCull::instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight) {

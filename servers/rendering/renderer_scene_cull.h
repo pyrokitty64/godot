@@ -417,6 +417,7 @@ public:
 		RID material_overlay;
 
 		RID mesh_instance; //only used for meshes and when skeleton/blendshapes exist
+		Callable post_skin_callback; // handed to mesh_instance whenever it's made
 
 		Transform3D transform;
 		bool teleported = false;
@@ -1037,6 +1038,7 @@ public:
 	virtual void instance_attach_object_instance_id(RID p_instance, ObjectID p_id);
 	virtual void instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight);
 	virtual PackedVector3Array instance_debug_get_skinned_vertices(RID p_instance, int p_surface);
+	virtual void instance_set_post_skin_callback(RID p_instance, const Callable &p_callback);
 	virtual void instance_set_surface_override_material(RID p_instance, int p_surface, RID p_material);
 	virtual void instance_set_visible(RID p_instance, bool p_visible);
 	virtual void instance_geometry_set_transparency(RID p_instance, float p_transparency);

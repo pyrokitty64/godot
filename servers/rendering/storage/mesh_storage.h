@@ -97,6 +97,7 @@ public:
 	virtual void mesh_instance_set_skeleton(RID p_mesh_instance, RID p_skeleton) = 0;
 	virtual void mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int p_shape, float p_weight) = 0;
 	virtual PackedVector3Array mesh_instance_debug_get_skinned_vertices(RID p_mesh_instance, int p_surface) = 0; // Positions after skinning, read back from the GPU.
+	virtual void mesh_instance_set_post_skin_callback(RID p_mesh_instance, const Callable &p_callback) = 0; // Re-skins every frame and hands the skinned buffers to p_callback.
 	virtual void mesh_instance_check_for_update(RID p_mesh_instance) = 0;
 	virtual void mesh_instance_set_canvas_item_transform(RID p_mesh_instance, const Transform2D &p_transform) = 0;
 	virtual void update_mesh_instances() = 0;

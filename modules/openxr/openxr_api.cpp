@@ -438,6 +438,11 @@ bool OpenXRAPI::load_supported_extensions() {
 	// Note, instance is not yet setup so we can't use get_error_string to retrieve our error
 	uint32_t num_supported_extensions = 0;
 	XrResult result = xrEnumerateInstanceExtensionProperties(nullptr, 0, &num_supported_extensions, nullptr);
+	if (XR_FAILED(result) && deferred) {
+		// Deferred OpenXR asks again every 2 s; no runtime is the normal state on a machine without VR.
+		print_verbose("OpenXR: no runtime to list extensions, trying again later");
+		return false;
+	}
 	ERR_FAIL_COND_V_MSG(XR_FAILED(result), false, "OpenXR: Failed to enumerate number of extension properties");
 
 	supported_extensions.resize(num_supported_extensions);
@@ -596,7 +601,11 @@ XrResult OpenXRAPI::attempt_create_instance(XrVersion p_version) {
 	for (const RequestExtension &requested_extension : requested_extensions) {
 		if (!is_extension_supported(requested_extension.name)) {
 			if (requested_extension.enabled == nullptr) {
-				// Null means this is a mandatory extension so we fail.
+				// Null means this is a mandatory extension so we fail: deferred OpenXR quietly, as a machine without VR.
+				if (deferred) {
+					print_verbose(String("OpenXR: OpenXR Runtime does not support ") + requested_extension.name + String(" extension, so no VR"));
+					return XR_ERROR_INITIALIZATION_FAILED;
+				}
 				ERR_FAIL_V_MSG(XR_ERROR_INITIALIZATION_FAILED, String("OpenXR: OpenXR Runtime does not support ") + requested_extension.name + String(" extension!"));
 			} else {
 				// Set this extension as not supported.
@@ -698,6 +707,11 @@ bool OpenXRAPI::create_instance() {
 
 		init_version = XR_API_VERSION_1_0;
 		result = attempt_create_instance(init_version);
+	}
+	if (XR_FAILED(result) && deferred) {
+		// As in load_supported_extensions(): no runtime, or one whose service isn't running (Monado), means no VR yet.
+		print_verbose("OpenXR: no runtime [" + get_error_string(result) + "], trying again later");
+		return false;
 	}
 	ERR_FAIL_COND_V_MSG(XR_FAILED(result), false, "Failed to create XR instance [" + get_error_string(result) + "].");
 

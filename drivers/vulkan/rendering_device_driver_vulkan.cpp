@@ -7354,6 +7354,39 @@ uint64_t RenderingDeviceDriverVulkan::get_lazily_memory_used() {
 	return vmaCalculateLazilyAllocatedBytes(allocator);
 }
 
+uint64_t RenderingDeviceDriverVulkan::get_video_memory_size() {
+	// The largest device-local heap: a discrete GPU's VRAM (its small ReBAR heap is device-local too), or an integrated
+	// GPU's share of system memory.
+	const VkPhysicalDeviceMemoryProperties *memory_properties = nullptr;
+	vmaGetMemoryProperties(allocator, &memory_properties);
+
+	uint64_t size = 0;
+	for (uint32_t i = 0; i < memory_properties->memoryHeapCount; i++) {
+		if (memory_properties->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+			size = MAX(size, memory_properties->memoryHeaps[i].size);
+		}
+	}
+	return size;
+}
+
+uint64_t RenderingDeviceDriverVulkan::get_video_memory_used() {
+	// Every device-local heap's usage (the BAR / ReBAR window is a heap of its own): with VK_EXT_memory_budget the
+	// driver's count for this process, else VMA's estimate. Host heaps (staging buffers) stay out.
+	const VkPhysicalDeviceMemoryProperties *memory_properties = nullptr;
+	vmaGetMemoryProperties(allocator, &memory_properties);
+
+	VmaBudget *budgets = ALLOCA_ARRAY(VmaBudget, memory_properties->memoryHeapCount);
+	vmaGetHeapBudgets(allocator, budgets);
+
+	uint64_t used = 0;
+	for (uint32_t i = 0; i < memory_properties->memoryHeapCount; i++) {
+		if (memory_properties->memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+			used += budgets[i].usage;
+		}
+	}
+	return used;
+}
+
 uint64_t RenderingDeviceDriverVulkan::limit_get(Limit p_limit) {
 	const VkPhysicalDeviceLimits &limits = physical_device_properties.limits;
 	uint64_t safe_unbounded = ((uint64_t)1 << 30);

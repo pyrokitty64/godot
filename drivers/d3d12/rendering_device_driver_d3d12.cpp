@@ -6015,6 +6015,18 @@ uint64_t RenderingDeviceDriverD3D12::get_total_memory_used() {
 	return local_budget.Stats.AllocationBytes + non_local_budget.Stats.AllocationBytes;
 }
 
+uint64_t RenderingDeviceDriverD3D12::get_video_memory_size() {
+	DXGI_ADAPTER_DESC desc;
+	return SUCCEEDED(adapter->GetDesc(&desc)) ? desc.DedicatedVideoMemory : 0;
+}
+
+uint64_t RenderingDeviceDriverD3D12::get_video_memory_used() {
+	// DXGI's count of this process's local (video) memory.
+	D3D12MA::Budget local_budget;
+	allocator->GetBudget(&local_budget, nullptr);
+	return local_budget.UsageBytes;
+}
+
 uint64_t RenderingDeviceDriverD3D12::get_lazily_memory_used() {
 	return 0;
 }

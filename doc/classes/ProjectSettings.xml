@@ -3498,6 +3498,9 @@
 		<member name="rendering/shading/overrides/force_vertex_shading" type="bool" setter="" getter="" default="false">
 			If [code]true[/code], forces vertex shading for all rendering. This can increase performance a lot, but also reduces quality immensely. Can be used to optimize performance on low-end mobile devices.
 		</member>
+		<member name="rendering/textures/basis_universal/max_size" type="int" setter="" getter="" default="0">
+			The largest side, in pixels, of a texture loaded from Basis Universal data (textures imported in Basis Universal mode) or from a KTX / KTX2 file, [code]0[/code] for no limit. A bigger texture with mipmaps starts at its first mipmap level that fits, so the levels above it are never transcoded or uploaded. This saves video memory on small GPUs without reimporting. It applies to textures loaded after it is set, so set it before loading the scenes that use them.
+		</member>
 		<member name="rendering/textures/basis_universal/rdo_dict_size" type="int" setter="" getter="" default="1024">
 			The dictionary size for Rate-Distortion Optimization (RDO) when importing textures as Basis Universal and when RDO is enabled, ranging from [code]64[/code] to [code]65536[/code]. Higher values reduce the file sizes further, but make encoding times significantly longer.
 		</member>

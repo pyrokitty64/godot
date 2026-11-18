@@ -2048,6 +2048,14 @@
 				Sets the sorting offset and switches between using the bounding box or instance origin for depth sorting.
 			</description>
 		</method>
+		<method name="instance_set_post_skin_callback">
+			<return type="void" />
+			<param index="0" name="instance" type="RID" />
+			<param index="1" name="callback" type="Callable" />
+			<description>
+				Calls [param callback] on the rendering thread right after the instance's skeleton and blend shapes are applied on the GPU, before any pass of the frame draws it, with an [Array] (one entry per surface, [code]null[/code] for a surface that isn't skinned) and the frame number. Each entry is a [Dictionary]: [code]buffer[/code], the RID of the skinned vertex buffer this frame draws (a storage buffer); [code]vertex_count[/code]; [code]vertex_stride[/code], in 4-byte words, positions being 3 floats at [code]index * vertex_stride[/code]; [code]has_normal[/code] and [code]has_tangent[/code], an octahedral-encoded [code]uint[/code] each, from word [code]vertex_count * vertex_stride[/code] on. Compute work the callback records on [method get_rendering_device] may read and rewrite the buffer, and every pass of the frame, motion vectors included, sees the result. While a callback is set, the instance is skinned afresh every frame it's drawn, even when nothing moved; if it's skinned a second time in the same frame, the callback is called again with the same frame number. Pass an empty [Callable] to remove it. Forward+ and Mobile only.
+			</description>
+		</method>
 		<method name="instance_set_scenario">
 			<return type="void" />
 			<param index="0" name="instance" type="RID" />
@@ -3984,6 +3992,12 @@
 			<description>
 				Creates a texture based on a native handle that was created outside of Godot's renderer.
 				[b]Note:[/b] If using only the rendering device renderer, it's recommend to use [method RenderingDevice.texture_create_from_extension] together with [method RenderingServer.texture_rd_create], rather than this method. This way, the texture's format and usage can be controlled more effectively.
+			</description>
+		</method>
+		<method name="texture_debug_usage">
+			<return type="Array" />
+			<description>
+				Returns every texture the renderer holds, one [Dictionary] each: [code]texture[/code] (its [RID]), [code]width[/code], [code]height[/code], [code]depth[/code], [code]format[/code] ([enum Image.Format]), [code]bytes[/code] (its video memory, mipmaps included) and [code]path[/code] (the resource path, empty for render targets and generated textures).
 			</description>
 		</method>
 		<method name="texture_drawable_blit_rect">

@@ -30,6 +30,7 @@
 
 #include "texture_loader_ktx.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/io/file_access_memory.h"
 #include "core/object/class_db.h"
@@ -547,7 +548,15 @@ static Ref<Image> load_from_file_access(Ref<FileAccess> f, Error *r_error) {
 		h = MAX(minh, h >> 1);
 	}
 
-	for (uint32_t i = 0; i < mipmaps; ++i) {
+	// rendering/textures/basis_universal/max_size (0: no limit, see modules/basis_universal): start at the first mip
+	// level whose larger side fits, so the levels above it are never uploaded.
+	const int max_size = ProjectSettings::get_singleton()->get_setting("rendering/textures/basis_universal/max_size", 0);
+	uint32_t first = 0;
+	while (max_size > 0 && first + 1 < mipmaps && MAX(width >> first, height >> first) > (uint32_t)max_size) {
+		first++;
+	}
+
+	for (uint32_t i = first; i < mipmaps; ++i) {
 		ktx_size_t mip_size = ktxTexture_GetImageSize(ktx_texture, i);
 		ktx_size_t offset;
 		if (ktxTexture_GetImageOffset(ktx_texture, i, 0, 0, &offset) != KTX_SUCCESS) {
@@ -559,7 +568,7 @@ static Ref<Image> load_from_file_access(Ref<FileAccess> f, Error *r_error) {
 		memcpy(src_data.ptrw() + prev_size, ktxTexture_GetData(ktx_texture) + offset, mip_size);
 	}
 
-	Ref<Image> img = memnew(Image(width, height, mipmaps - 1, format, src_data));
+	Ref<Image> img = memnew(Image(MAX(1u, width >> first), MAX(1u, height >> first), mipmaps - first - 1, format, src_data));
 	if (srgb) {
 		img->srgb_to_linear();
 	}

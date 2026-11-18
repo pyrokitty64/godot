@@ -710,6 +710,18 @@
 				This is only used by Vulkan in debug builds. Godot must also be started with the [code]--extra-gpu-memory-tracking[/code] [url=$DOCS_URL/tutorials/editor/command_line_tutorial.html]command line argument[/url].
 			</description>
 		</method>
+		<method name="get_video_memory_size" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the size of the GPU's own memory (VRAM) in bytes: on Vulkan the largest device-local memory heap (an integrated GPU's share of system memory), on Direct3D 12 the adapter's dedicated video memory. Returns [code]0[/code] where the driver can't tell. Compare with [method get_video_memory_used] to see how full it is.
+			</description>
+		</method>
+		<method name="get_video_memory_used" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how much of the GPU's own memory (VRAM) this process uses, in bytes, as the driver reports it: on Vulkan the usage of every device-local memory heap (from [code]VK_EXT_memory_budget[/code] where the driver has it, else an estimate), on Direct3D 12 the local memory usage. Unlike [method get_memory_usage] with [constant MEMORY_TOTAL], it leaves out system memory (staging buffers) and includes what the driver allocates itself, such as swapchains. Returns [code]0[/code] where the driver can't tell.
+			</description>
+		</method>
 		<method name="has_feature" qualifiers="const">
 			<return type="bool" />
 			<param index="0" name="feature" type="int" enum="RenderingDevice.Features" />

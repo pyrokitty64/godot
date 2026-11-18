@@ -9102,6 +9102,14 @@ uint64_t RenderingDevice::get_device_total_memory() const {
 	return context->get_device_total_memory();
 }
 
+uint64_t RenderingDevice::get_video_memory_size() const {
+	return driver->get_video_memory_size();
+}
+
+uint64_t RenderingDevice::get_video_memory_used() const {
+	return driver->get_video_memory_used();
+}
+
 uint64_t RenderingDevice::get_device_allocation_count() const {
 	return context->get_device_allocation_count();
 }
@@ -9525,6 +9533,8 @@ void RenderingDevice::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_driver_allocs_by_object_type", "type"), &RenderingDevice::get_driver_allocs_by_object_type);
 	ClassDB::bind_method(D_METHOD("get_device_total_memory"), &RenderingDevice::get_device_total_memory);
 	ClassDB::bind_method(D_METHOD("get_device_allocation_count"), &RenderingDevice::get_device_allocation_count);
+	ClassDB::bind_method(D_METHOD("get_video_memory_size"), &RenderingDevice::get_video_memory_size);
+	ClassDB::bind_method(D_METHOD("get_video_memory_used"), &RenderingDevice::get_video_memory_used);
 	ClassDB::bind_method(D_METHOD("get_device_memory_by_object_type", "type"), &RenderingDevice::get_device_memory_by_object_type);
 	ClassDB::bind_method(D_METHOD("get_device_allocs_by_object_type", "type"), &RenderingDevice::get_device_allocs_by_object_type);
 

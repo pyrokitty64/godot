@@ -217,6 +217,17 @@ Vector<uint8_t> basis_universal_packer(const Ref<Image> &p_image, Image::UsedCha
 }
 #endif // TOOLS_ENABLED
 
+// rendering/textures/basis_universal/max_size (0: no limit): the first mip level whose larger side fits, so a bigger
+// texture is never transcoded or uploaded at the levels above it. Also read by the KTX loader (modules/ktx).
+static uint32_t _first_level_within_max_size(uint32_t p_width, uint32_t p_height, uint32_t p_levels) {
+	const int max_size = ProjectSettings::get_singleton()->get_setting("rendering/textures/basis_universal/max_size", 0);
+	uint32_t first = 0;
+	while (max_size > 0 && first + 1 < p_levels && MAX(p_width >> first, p_height >> first) > (uint32_t)max_size) {
+		first++;
+	}
+	return first;
+}
+
 Ref<Image> basis_universal_unpacker_ptr(const uint8_t *p_data, int p_size) {
 	uint64_t start_time = OS::get_singleton()->get_ticks_msec();
 
@@ -351,19 +362,24 @@ Ref<Image> basis_universal_unpacker_ptr(const uint8_t *p_data, int p_size) {
 
 		transcoder.start_transcoding();
 
+		const uint32_t first = _first_level_within_max_size(transcoder.get_width(), transcoder.get_height(), transcoder.get_levels());
+		const uint32_t width = MAX(1u, transcoder.get_width() >> first);
+		const uint32_t height = MAX(1u, transcoder.get_height() >> first);
+		const bool mipmaps = transcoder.get_levels() - first > 1;
+
 		// Create the buffer for transcoded/decompressed data.
 		Vector<uint8_t> out_data;
-		out_data.resize(Image::get_image_data_size(transcoder.get_width(), transcoder.get_height(), image_format, transcoder.get_levels() > 1));
+		out_data.resize(Image::get_image_data_size(width, height, image_format, mipmaps));
 
 		uint8_t *dst = out_data.ptrw();
 		memset(dst, 0, out_data.size());
 
-		for (uint32_t i = 0; i < transcoder.get_levels(); i++) {
+		for (uint32_t i = first; i < transcoder.get_levels(); i++) {
 			basist::ktx2_image_level_info basisu_level;
 			transcoder.get_image_level_info(basisu_level, i, 0, 0);
 
 			uint32_t mip_block_or_pixel_count = Image::is_format_compressed(image_format) ? basisu_level.m_total_blocks : basisu_level.m_orig_width * basisu_level.m_orig_height;
-			int64_t ofs = Image::get_image_mipmap_offset(transcoder.get_width(), transcoder.get_height(), image_format, i);
+			int64_t ofs = Image::get_image_mipmap_offset(width, height, image_format, i - first);
 
 			bool result = transcoder.transcode_image_level(i, 0, 0, dst + ofs, mip_block_or_pixel_count, basisu_format);
 
@@ -373,7 +389,7 @@ Ref<Image> basis_universal_unpacker_ptr(const uint8_t *p_data, int p_size) {
 			}
 		}
 
-		image = Image::create_from_data(transcoder.get_width(), transcoder.get_height(), transcoder.get_levels() > 1, image_format, out_data);
+		image = Image::create_from_data(width, height, mipmaps, image_format, out_data);
 	} else {
 		basist::basisu_transcoder transcoder;
 		ERR_FAIL_COND_V(!transcoder.validate_header(src_ptr, src_size), image);
@@ -383,19 +399,24 @@ Ref<Image> basis_universal_unpacker_ptr(const uint8_t *p_data, int p_size) {
 		basist::basisu_image_info basisu_info;
 		transcoder.get_image_info(src_ptr, src_size, basisu_info, 0);
 
+		const uint32_t first = _first_level_within_max_size(basisu_info.m_width, basisu_info.m_height, basisu_info.m_total_levels);
+		const uint32_t width = MAX(1u, basisu_info.m_width >> first);
+		const uint32_t height = MAX(1u, basisu_info.m_height >> first);
+		const bool mipmaps = basisu_info.m_total_levels - first > 1;
+
 		// Create the buffer for transcoded/decompressed data.
 		Vector<uint8_t> out_data;
-		out_data.resize(Image::get_image_data_size(basisu_info.m_width, basisu_info.m_height, image_format, basisu_info.m_total_levels > 1));
+		out_data.resize(Image::get_image_data_size(width, height, image_format, mipmaps));
 
 		uint8_t *dst = out_data.ptrw();
 		memset(dst, 0, out_data.size());
 
-		for (uint32_t i = 0; i < basisu_info.m_total_levels; i++) {
+		for (uint32_t i = first; i < basisu_info.m_total_levels; i++) {
 			basist::basisu_image_level_info basisu_level;
 			transcoder.get_image_level_info(src_ptr, src_size, basisu_level, 0, i);
 
 			uint32_t mip_block_or_pixel_count = Image::is_format_compressed(image_format) ? basisu_level.m_total_blocks : basisu_level.m_orig_width * basisu_level.m_orig_height;
-			int64_t ofs = Image::get_image_mipmap_offset(basisu_info.m_width, basisu_info.m_height, image_format, i);
+			int64_t ofs = Image::get_image_mipmap_offset(width, height, image_format, i - first);
 
 			bool result = transcoder.transcode_image_level(src_ptr, src_size, 0, i, dst + ofs, mip_block_or_pixel_count, basisu_format);
 
@@ -405,7 +426,7 @@ Ref<Image> basis_universal_unpacker_ptr(const uint8_t *p_data, int p_size) {
 			}
 		}
 
-		image = Image::create_from_data(basisu_info.m_width, basisu_info.m_height, basisu_info.m_total_levels > 1, image_format, out_data);
+		image = Image::create_from_data(width, height, mipmaps, image_format, out_data);
 	}
 
 	if (needs_ra_rg_swap) {

@@ -2218,6 +2218,7 @@ void TextureStorage::texture_debug_usage(List<RenderingServerTypes::TextureInfo>
 			continue;
 		}
 		RenderingServerTypes::TextureInfo tinfo;
+		tinfo.texture = rid;
 		tinfo.path = t->path;
 		tinfo.format = t->format;
 		tinfo.width = t->width;

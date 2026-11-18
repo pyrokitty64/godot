@@ -1999,6 +1999,8 @@ public:
 
 	uint64_t get_device_total_memory() const;
 	uint64_t get_device_allocation_count() const;
+	uint64_t get_video_memory_size() const;
+	uint64_t get_video_memory_used() const;
 	uint64_t get_device_memory_by_object_type(uint32_t p_type) const;
 	uint64_t get_device_allocs_by_object_type(uint32_t p_type) const;
 

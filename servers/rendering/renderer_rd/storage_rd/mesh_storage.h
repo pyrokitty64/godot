@@ -206,6 +206,8 @@ private:
 		SelfList<MeshInstance> weight_update_list;
 		SelfList<MeshInstance> array_update_list;
 		Transform2D canvas_item_transform_2d;
+		Callable post_skin_callback;
+		uint64_t post_skin_frame = 0; // the last frame it was skinned for post_skin_callback
 		MeshInstance() :
 				weight_update_list(this), array_update_list(this) {}
 	};
@@ -654,6 +656,7 @@ public:
 	virtual void mesh_instance_set_skeleton(RID p_mesh_instance, RID p_skeleton) override;
 	virtual void mesh_instance_set_blend_shape_weight(RID p_mesh_instance, int p_shape, float p_weight) override;
 	virtual PackedVector3Array mesh_instance_debug_get_skinned_vertices(RID p_mesh_instance, int p_surface) override;
+	virtual void mesh_instance_set_post_skin_callback(RID p_mesh_instance, const Callable &p_callback) override;
 	virtual void mesh_instance_check_for_update(RID p_mesh_instance) override;
 	virtual void mesh_instance_set_canvas_item_transform(RID p_mesh_instance, const Transform2D &p_transform) override;
 	virtual void update_mesh_instances() override;
