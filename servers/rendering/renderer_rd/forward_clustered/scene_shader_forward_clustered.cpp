@@ -32,6 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/math/math_defs.h"
+#include "core/os/os.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/renderer_compositor_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
@@ -330,6 +331,14 @@ uint16_t SceneShaderForwardClustered::ShaderData::_get_shader_version(PipelineVe
 	}
 }
 
+// `-- --log-pipelines` on the command line: one line per scene pipeline the driver builds, with how long it took,
+// when (ms since launch) and which shader: its file, or for a generated one (StandardMaterial3D, code without a
+// file) its code's hash and render_mode. For finding what a cold driver cache spends its time on.
+static bool _log_pipelines() {
+	static const bool on = OS::get_singleton()->get_cmdline_user_args().find("--log-pipelines") != nullptr;
+	return on;
+}
+
 void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pipeline_key) {
 #if PRINT_PIPELINE_COMPILATION_KEYS
 	print_line(
@@ -504,8 +513,19 @@ void SceneShaderForwardClustered::ShaderData::_create_pipeline(PipelineKey p_pip
 	RID shader_rid = get_shader_variant(p_pipeline_key.version, p_pipeline_key.color_pass_flags, p_pipeline_key.ubershader);
 	ERR_FAIL_COND(shader_rid.is_null());
 
+	const uint64_t log_start = _log_pipelines() ? OS::get_singleton()->get_ticks_usec() : 0;
 	RID pipeline = RD::get_singleton()->render_pipeline_create(shader_rid, p_pipeline_key.framebuffer_format_id, p_pipeline_key.vertex_format_id, primitive_rd, raster_state, multisample_state, depth_stencil_state, blend_state, 0, 0, specialization_constants);
 	ERR_FAIL_COND(pipeline.is_null());
+	if (_log_pipelines()) {
+		String which = path;
+		if (which.is_empty()) {
+			const int rm = code.find("render_mode ");
+			which = vformat("code %08x %s", code.hash(), rm >= 0 ? code.substr(rm, code.find(";", rm) - rm) : String("(no render_mode)"));
+		}
+		print_line(vformat("[pipeline] %.1f ms at %d ms  version %d  pass 0x%x  %s  %s", (OS::get_singleton()->get_ticks_usec() - log_start) / 1000.0,
+				OS::get_singleton()->get_ticks_msec(), int(p_pipeline_key.version), p_pipeline_key.color_pass_flags,
+				p_pipeline_key.ubershader ? "ubershader" : "specialized", which));
+	}
 
 	pipeline_hash_map.add_compiled_pipeline(p_pipeline_key.hash(), pipeline);
 }
