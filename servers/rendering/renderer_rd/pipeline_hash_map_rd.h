@@ -43,6 +43,9 @@
 
 #define PRINT_PIPELINE_COMPILATION_KEYS 0
 
+// Background pipeline compilations queued and not yet finished, across every map (RENDERING_INFO_PIPELINE_COMPILATIONS_PENDING).
+inline SafeNumeric<uint32_t> pipeline_compilations_pending;
+
 template <typename Key, typename CreationClass, typename CreationFunction>
 class PipelineHashMapRD {
 private:
@@ -82,6 +85,11 @@ private:
 		}
 
 		return !hashes_added.is_empty();
+	}
+
+	void _compile_task(Key p_key) {
+		(creation_object->*creation_function)(p_key);
+		pipeline_compilations_pending.decrement();
 	}
 
 	void _wait_for_all_pipelines() {
@@ -148,7 +156,8 @@ public:
 #endif
 
 		// Queue a background compilation task.
-		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(creation_object, creation_function, p_key, p_high_priority, "PipelineCompilation");
+		pipeline_compilations_pending.increment();
+		WorkerThreadPool::TaskID task_id = WorkerThreadPool::get_singleton()->add_template_task(this, &PipelineHashMapRD::_compile_task, p_key, p_high_priority, "PipelineCompilation");
 		compilation_tasks.insert(p_key_hash, task_id);
 	}
 

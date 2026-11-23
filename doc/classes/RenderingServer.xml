@@ -6331,6 +6331,9 @@
 		<constant name="RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION" value="10" enum="RenderingInfo">
 			Number of pipeline compilations that were triggered to optimize the current scene. These compilations are done in the background and should not cause any stutters whatsoever.
 		</constant>
+		<constant name="RENDERING_INFO_PIPELINE_COMPILATIONS_PENDING" value="11" enum="RenderingInfo">
+			Number of background pipeline compilations queued and not yet finished. A surface whose pipeline is among them is not drawn until it is ready. Always [code]0[/code] in the Compatibility renderer.
+		</constant>
 		<constant name="PIPELINE_SOURCE_CANVAS" value="0" enum="PipelineSource">
 			Pipeline compilation that was triggered by the 2D canvas renderer.
 		</constant>

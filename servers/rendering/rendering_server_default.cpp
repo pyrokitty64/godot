@@ -39,6 +39,10 @@
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server_globals.h"
 
+#ifdef RD_ENABLED
+#include "servers/rendering/renderer_rd/pipeline_hash_map_rd.h"
+#endif
+
 #ifndef XR_DISABLED
 #include "servers/xr/xr_server.h"
 #endif
@@ -321,6 +325,12 @@ uint64_t RenderingServerDefault::get_rendering_info(RSE::RenderingInfo p_info) {
 		return RSG::canvas_render->get_pipeline_compilations(RSE::PIPELINE_SOURCE_DRAW) + RSG::scene->get_pipeline_compilations(RSE::PIPELINE_SOURCE_DRAW);
 	} else if (p_info == RSE::RENDERING_INFO_PIPELINE_COMPILATIONS_SPECIALIZATION) {
 		return RSG::canvas_render->get_pipeline_compilations(RSE::PIPELINE_SOURCE_SPECIALIZATION) + RSG::scene->get_pipeline_compilations(RSE::PIPELINE_SOURCE_SPECIALIZATION);
+	} else if (p_info == RSE::RENDERING_INFO_PIPELINE_COMPILATIONS_PENDING) {
+#ifdef RD_ENABLED
+		return pipeline_compilations_pending.get();
+#else
+		return 0;
+#endif
 	}
 	return RSG::utilities->get_rendering_info(p_info);
 }
