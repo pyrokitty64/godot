@@ -31,6 +31,7 @@
 #include "render_forward_clustered.h"
 
 #include "core/config/project_settings.h"
+#include "core/os/os.h"
 #include "servers/rendering/renderer_rd/environment/fog.h"
 #include "servers/rendering/renderer_rd/framebuffer_cache_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/light_storage.h"
@@ -309,6 +310,15 @@ void RenderForwardClustered::update() {
 
 /// RENDERING ///
 
+// `-- --no-ubershader` on the command line: no ubershader pipelines. Nothing is compiled ahead when a surface is
+// added (those were always ubershaders), and a draw uses only its specialized pipeline, skipped until the driver
+// has built it (the draw loop never waits). Each specialized pipeline costs a fraction of an ubershader to build
+// (~0.7 s against ~3 s on a GTX 1650 laptop's cold cache), but a new lighting combination needs a new one.
+static bool _no_ubershader() {
+	static const bool on = OS::get_singleton()->get_cmdline_user_args().find("--no-ubershader") != nullptr;
+	return on;
+}
+
 template <RenderForwardClustered::PassMode p_pass_mode, uint32_t p_color_pass_flags>
 void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p_draw_list, RenderingDevice::FramebufferFormatID p_framebuffer_Format, RenderListParameters *p_params, uint32_t p_from_element, uint32_t p_to_element) {
 	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
@@ -504,7 +514,7 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 		RID vertex_array_rd;
 		RID index_array_rd;
 		RID pipeline_rd;
-		const uint32_t ubershader_iterations = 2;
+		const uint32_t ubershader_iterations = _no_ubershader() ? 1 : 2;
 		bool pipeline_valid = false;
 		while (pipeline_key.ubershader < ubershader_iterations) {
 			// Skeleton and blend shape.
@@ -4833,6 +4843,9 @@ void RenderForwardClustered::_mesh_compile_pipeline_for_surface(SceneShaderForwa
 	bool emulate_point_size = p_shader->uses_point_size && scene_shader.emulate_point_size;
 	r_pipeline_key.vertex_format_id = mesh_storage->mesh_surface_get_vertex_format(p_mesh_surface, input_mask, p_instanced_surface, pipeline_motion_vectors, emulate_point_size);
 	r_pipeline_key.ubershader = p_ubershader;
+	if (p_ubershader && _no_ubershader()) {
+		return;
+	}
 
 	p_shader->pipeline_hash_map.compile_pipeline(r_pipeline_key, r_pipeline_key.hash(), p_source, p_ubershader);
 
