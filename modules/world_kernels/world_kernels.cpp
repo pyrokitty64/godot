@@ -1067,7 +1067,8 @@ Dictionary WorldKernels::hydrology(const Dictionary &p_params) {
 	t = ticks();
 
 	// Lakes: each basin the flood filled, if it is big and deep enough (a river through it keeps
-	// a smaller one), stands at its spill level, its floor dug a little under it.
+	// a smaller one), stands at its outlet's level over the ground under it, its floor dug a little
+	// under it.
 	const double lake_floor = 1.5;
 	const double lake_above_sea = 0.3; // or the basin is left to the sea
 	PackedFloat32Array water_level_p;
@@ -1102,15 +1103,10 @@ Dictionary WorldKernels::hydrology(const Dictionary &p_params) {
 		int64_t sp = 0;
 		stack[sp++] = i;
 		visited[i] = 1;
-		double max_fill = 0.0;
 		bool has_river = false;
 		while (sp > 0) {
 			const int32_t c = stack[--sp];
 			comp.push_back(c);
-			const double f = double(filled[c]) - double(h[c]);
-			if (f > max_fill) {
-				max_fill = f;
-			}
 			if (acc[c] >= catch_min[c]) {
 				has_river = true;
 			}
@@ -1123,6 +1119,15 @@ Dictionary WorldKernels::hydrology(const Dictionary &p_params) {
 			}
 		}
 		basins++;
+		// One level for the whole basin, its outlet's: the lowest spill in it. Not each cell's own
+		// spill: the flood's rise across a big flat (1.7 m on 417) reaches parts of one basin over low
+		// bumps, which would split the lake into steps, and lift its water over dry shore.
+		double outlet = 1e30;
+		double lowest = 1e30;
+		for (const int32_t c : comp) {
+			outlet = VU::minf(outlet, double(spill[c]));
+			lowest = VU::minf(lowest, double(h[c]));
+		}
 		const double dry = desert[i];
 		double drop = 0.0;
 		if (has_river) {
@@ -1131,32 +1136,29 @@ Dictionary WorldKernels::hydrology(const Dictionary &p_params) {
 			}
 		} else {
 			drop = desert_lake_drop * dry;
-			int64_t wet = comp.size();
-			if (drop > 0.0) {
-				wet = 0;
-				for (const int32_t c : comp) {
-					if (h[c] < spill[c] - drop) {
-						wet++;
-					}
+			int64_t wet = 0;
+			for (const int32_t c : comp) {
+				if (h[c] < outlet - drop) {
+					wet++;
 				}
 			}
-			if (wet < area(lake_min_cells) * VU::lerpf(1.0, desert_lake_cells, dry) || max_fill < lake_min_depth * VU::lerpf(1.0, desert_lake_depth, dry)) {
+			if (wet < area(lake_min_cells) * VU::lerpf(1.0, desert_lake_cells, dry) || outlet - lowest < lake_min_depth * VU::lerpf(1.0, desert_lake_depth, dry)) {
 				continue;
 			}
 		}
+		const double level = outlet - drop;
 		// A basin whose water would not stand clear of the sea is the sea's.
-		if (spill[i] - drop < sea + lake_above_sea) {
+		if (level < sea + lake_above_sea) {
 			continue;
 		}
 		kept++;
 		for (const int32_t c : comp) {
-			const double level = spill[c] - drop;
-			if (drop > 0.0 && h[c] >= level) {
+			if (h[c] >= level) {
 				continue;
 			}
 			lake[c] = level;
 			wlv[c] = level;
-			const double dig = VU::minf(lake_floor, (double(filled[c]) - double(h[c])) * 3.0);
+			const double dig = VU::minf(lake_floor, (level - double(h[c])) * 3.0);
 			h[c] = VU::minf(h[c], level - dig);
 		}
 	}
